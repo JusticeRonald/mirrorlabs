@@ -19,9 +19,11 @@ const ProjectsNavigation = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-              <div className="w-4 h-4 rounded bg-primary" />
-            </div>
+            <img
+              src="/icon.svg"
+              alt="Mirror Labs"
+              className="w-8 h-8"
+            />
             <span className="text-lg font-semibold text-foreground">Mirror Labs</span>
           </Link>
 

@@ -4,7 +4,22 @@
       "Bash(wc:*)",
       "Bash(npm install:*)",
       "Bash(npm run build)",
-      "Bash(timeout 10 npm run dev:*)"
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(npm run dev)",
+      "Bash(timeout:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill /PID 28236 /F)",
+      "Bash(taskkill:*)",
+      "Bash(cd:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:rive.app)",
+      "WebSearch",
+      "WebFetch(domain:linear.app)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

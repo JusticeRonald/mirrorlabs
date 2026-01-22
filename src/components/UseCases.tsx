@@ -1,129 +1,94 @@
-import { 
-  Building2, 
-  Factory, 
-  Wrench, 
-  PenTool, 
-  Warehouse, 
-  Home 
-} from "lucide-react";
+import { ConstructionIcon, RealEstateIcon, HospitalityIcon, ForensicsIcon, InsuranceIcon } from "@/components/icons";
+import { useScrollAnimation, useStaggerAnimation } from "@/hooks/use-scroll-animation";
 
 const UseCases = () => {
+  const { ref: headerRef, isVisible: headerVisible } = useScrollAnimation();
+  const { ref: gridRef, isVisible: gridVisible } = useScrollAnimation({ threshold: 0.15 });
+  const staggerDelays = useStaggerAnimation(5, 80);
+
   const industries = [
     {
-      icon: Building2,
-      category: "Construction",
-      title: "Coordinate trades and track progress",
-      description: "Keep all stakeholders aligned with shared access to site conditions. Reduce RFIs, minimize site visits, and catch clashes before they become problems.",
-      benefits: [
-        "Reduce coordination errors",
-        "Track progress remotely",
-        "Document as-built conditions",
-      ],
+      icon: ConstructionIcon,
+      name: "Construction",
+      tagline: "Coordinate trades, track progress",
     },
     {
-      icon: Factory,
-      category: "Manufacturing",
-      title: "Plan layouts and optimize workflows",
-      description: "Visualize existing facilities and plan changes without disrupting operations. Test equipment placement, plan maintenance access, and train teams on new configurations.",
-      benefits: [
-        "Optimize floor layouts",
-        "Plan equipment moves",
-        "Train remote teams",
-      ],
+      icon: RealEstateIcon,
+      name: "Real Estate",
+      tagline: "Virtual tours, space documentation",
     },
     {
-      icon: Wrench,
-      category: "Facility Management",
-      title: "Maintain and retrofit buildings",
-      description: "Document existing conditions for maintenance planning and contractor coordination. Reduce site visits and provide contractors with accurate context before they arrive.",
-      benefits: [
-        "Speed up maintenance planning",
-        "Coordinate contractors remotely",
-        "Document building changes",
-      ],
+      icon: HospitalityIcon,
+      name: "Hospitality",
+      tagline: "Venue capture, renovation planning",
     },
     {
-      icon: PenTool,
-      category: "Architecture & Design",
-      title: "Collaborate on renovations",
-      description: "Work with existing conditions data that's always accessible. Share spaces with clients, take accurate measurements, and document design intent throughout the project.",
-      benefits: [
-        "Measure existing spaces remotely",
-        "Present to clients visually",
-        "Document design decisions",
-      ],
+      icon: ForensicsIcon,
+      name: "Forensics",
+      tagline: "Scene preservation, case review",
     },
     {
-      icon: Warehouse,
-      category: "Logistics & Warehousing",
-      title: "Optimize storage and flow",
-      description: "Plan warehouse layouts, analyze flow patterns, and maximize storage efficiency. Make data-driven decisions about space utilization without disrupting operations.",
-      benefits: [
-        "Plan storage optimization",
-        "Analyze traffic patterns",
-        "Coordinate layout changes",
-      ],
-    },
-    {
-      icon: Home,
-      category: "Real Estate",
-      title: "Market and manage properties",
-      description: "Provide immersive property tours and accurate documentation for tenants and buyers. Reduce time to lease and improve property management efficiency.",
-      benefits: [
-        "Virtual property tours",
-        "Accurate space documentation",
-        "Remote property inspections",
-      ],
+      icon: InsuranceIcon,
+      name: "Insurance",
+      tagline: "Claims documentation, remote assessment",
     },
   ];
 
   return (
-    <section id="use-cases" className="py-24 bg-secondary/20">
-      <div className="container mx-auto px-6">
-        <div className="text-center mb-16">
+    <section id="use-cases" className="py-32 relative overflow-hidden section-elevated">
+      {/* Background */}
+      <div className="absolute inset-x-0 top-0 h-px bg-border/50" />
+      <div className="absolute inset-0 point-cloud-bg opacity-10" />
+
+      <div className="container mx-auto px-6 relative z-10">
+        {/* Header */}
+        <div
+          ref={headerRef}
+          className={`text-center mb-20 transition-all duration-700 ${
+            headerVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+          }`}
+        >
           <span className="text-sm text-primary font-medium uppercase tracking-wider">
             Industries
           </span>
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mt-3 mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold font-heading text-foreground mt-3 mb-4">
             Built for teams who work with physical spaces
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            See how different industries use Mirror Labs to improve coordination and reduce errors.
-          </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+        {/* Icon-Forward Grid */}
+        <div
+          ref={gridRef}
+          className="max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-8 md:gap-12"
+        >
           {industries.map((industry, index) => (
             <div
-              key={index}
-              className="group p-6 rounded-xl border border-border bg-card hover:border-primary/30 transition-all duration-300"
+              key={industry.name}
+              style={staggerDelays[index].style}
+              className={`group flex flex-col items-center text-center transition-all duration-500 ${
+                gridVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+              }`}
             >
-              <div className="flex items-start gap-4 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                  <industry.icon className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <span className="text-sm text-primary font-medium">
-                    {industry.category}
-                  </span>
-                  <h3 className="font-semibold text-foreground text-lg">
-                    {industry.title}
-                  </h3>
+              {/* Large Icon Container */}
+              <div className="relative mb-4">
+                {/* Glow effect on hover */}
+                <div className="absolute inset-0 rounded-2xl bg-mirror-amber-400/0 blur-xl transition-all duration-500 group-hover:bg-mirror-amber-400/20" />
+
+                {/* Icon */}
+                <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-card border border-border flex items-center justify-center transition-all duration-300 group-hover:border-mirror-amber-400/30 group-hover:bg-card/80">
+                  <industry.icon className="w-10 h-10 md:w-12 md:h-12 text-muted-foreground transition-all duration-300 group-hover:text-mirror-amber-400 group-hover:scale-110" />
                 </div>
               </div>
-              
-              <p className="text-muted-foreground leading-relaxed mb-4">
-                {industry.description}
+
+              {/* Industry Name */}
+              <h3 className="font-semibold font-heading text-foreground text-base md:text-lg mb-1 transition-colors duration-300 group-hover:text-mirror-amber-400">
+                {industry.name}
+              </h3>
+
+              {/* Tagline - fades in on hover */}
+              <p className="text-xs md:text-sm text-muted-foreground opacity-0 translate-y-1 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0">
+                {industry.tagline}
               </p>
-              
-              <ul className="space-y-2">
-                {industry.benefits.map((benefit, benefitIndex) => (
-                  <li key={benefitIndex} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-                    {benefit}
-                  </li>
-                ))}
-              </ul>
             </div>
           ))}
         </div>

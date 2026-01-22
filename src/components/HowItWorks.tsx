@@ -29,15 +29,16 @@ const HowItWorks = () => {
   ];
 
   return (
-    <section className="py-24 relative overflow-hidden">
-      <div className="absolute inset-0 grid-pattern opacity-20" />
+    <section className="py-32 relative overflow-hidden section-elevated">
+      <div className="absolute inset-x-0 top-0 h-px bg-border/50" />
+      <div className="absolute inset-0 grid-pattern opacity-25" />
       
       <div className="container mx-auto px-6 relative z-10">
         <div className="text-center mb-16">
           <span className="text-sm text-primary font-medium uppercase tracking-wider">
             How It Works
           </span>
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mt-3 mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold font-heading text-foreground mt-3 mb-4">
             From capture to collaboration in minutes
           </h2>
         </div>
@@ -63,7 +64,7 @@ const HowItWorks = () => {
                   </div>
 
                   {/* Content */}
-                  <h3 className="font-semibold text-foreground mb-2">
+                  <h3 className="font-semibold font-heading text-foreground mb-2">
                     {item.title}
                   </h3>
                   <p className="text-sm text-muted-foreground">

@@ -20,14 +20,14 @@ const Security = () => {
   ];
 
   return (
-    <section id="security" className="py-24 relative">
+    <section id="security" className="py-32 relative section-default">
       <div className="container mx-auto px-6">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <span className="text-sm text-primary font-medium uppercase tracking-wider">
               Enterprise Ready
             </span>
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mt-3 mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold font-heading text-foreground mt-3 mb-4">
               Security you can trust
             </h2>
             <p className="text-lg text-muted-foreground">
@@ -44,7 +44,7 @@ const Security = () => {
                 <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                   <feature.icon className="w-7 h-7 text-primary" />
                 </div>
-                <h3 className="font-semibold text-foreground mb-2">
+                <h3 className="font-semibold font-heading text-foreground mb-2">
                   {feature.title}
                 </h3>
                 <p className="text-sm text-muted-foreground">

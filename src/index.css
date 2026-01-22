@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,82 +6,82 @@
 
 @layer base {
   :root {
-    /* Deep slate/navy foundation */
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* Linear-inspired monochrome foundation */
+    --background: 220 10% 4%;
+    --foreground: 0 0% 98%;
 
-    /* Cards with subtle elevation */
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    /* Alternating section backgrounds for contrast */
+    --background-elevated: 220 8% 7%;
+    --background-sunken: 220 10% 3%;
 
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
+    /* Cards - clean, minimal */
+    --card: 220 8% 8%;
+    --card-foreground: 0 0% 98%;
 
-    /* Electric blue primary */
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 6%;
+    --popover: 220 8% 8%;
+    --popover-foreground: 0 0% 98%;
 
-    /* Muted slate surfaces */
-    --secondary: 222 30% 12%;
-    --secondary-foreground: 210 40% 98%;
+    /* Primary is now neutral white for buttons/links - monochrome UI */
+    --primary: 0 0% 98%;
+    --primary-foreground: 220 10% 4%;
 
-    --muted: 222 30% 15%;
-    --muted-foreground: 215 20% 55%;
+    /* Accent amber - ONLY for visual highlights (illustrations, media, badges) */
+    --accent: 43 96% 56%;
+    --accent-foreground: 0 0% 5%;
 
-    --accent: 217 91% 60%;
-    --accent-foreground: 222 47% 6%;
+    /* Neutral surfaces */
+    --secondary: 220 6% 10%;
+    --secondary-foreground: 0 0% 90%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --muted: 220 6% 14%;
+    --muted-foreground: 220 5% 55%;
 
-    --border: 222 30% 18%;
-    --input: 222 30% 15%;
-    --ring: 217 91% 60%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
 
-    --radius: 0.75rem;
+    --border: 220 6% 15%;
+    --input: 220 6% 12%;
+    --ring: 0 0% 60%;
 
-    /* Custom tokens */
-    --gradient-hero: linear-gradient(180deg, hsl(222 47% 8%) 0%, hsl(222 47% 4%) 100%);
-    --gradient-card: linear-gradient(135deg, hsl(222 30% 10%) 0%, hsl(222 30% 8%) 100%);
-    --gradient-cta: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(217 91% 50%) 100%);
-    --gradient-grid: linear-gradient(to right, hsl(222 30% 15% / 0.3) 1px, transparent 1px),
-                     linear-gradient(to bottom, hsl(222 30% 15% / 0.3) 1px, transparent 1px);
-    
-    --shadow-card: 0 4px 24px -4px hsl(222 47% 4% / 0.5);
-    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.15);
-    --shadow-button: 0 4px 14px hsl(217 91% 60% / 0.3);
+    --radius: 0.5rem;
 
-    /* Sidebar defaults */
-    --sidebar-background: 222 47% 8%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 60%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 30% 12%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 30% 18%;
-    --sidebar-ring: 217 91% 60%;
+    /* Minimal shadows - no colored glows */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+    /* Sidebar */
+    --sidebar-background: 220 10% 5%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 220 10% 4%;
+    --sidebar-accent: 220 6% 12%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 220 6% 15%;
+    --sidebar-ring: 0 0% 60%;
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 222 30% 12%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222 30% 15%;
-    --muted-foreground: 215 20% 55%;
-    --accent: 217 91% 60%;
-    --accent-foreground: 222 47% 6%;
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222 30% 18%;
-    --input: 222 30% 15%;
-    --ring: 217 91% 60%;
+    --background: 220 10% 4%;
+    --foreground: 0 0% 98%;
+    --background-elevated: 220 8% 7%;
+    --background-sunken: 220 10% 3%;
+    --card: 220 8% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 8% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 220 10% 4%;
+    --accent: 43 96% 56%;
+    --accent-foreground: 0 0% 5%;
+    --secondary: 220 6% 10%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 220 6% 14%;
+    --muted-foreground: 220 5% 55%;
+    --destructive: 0 50% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 6% 15%;
+    --input: 220 6% 12%;
+    --ring: 0 0% 60%;
   }
 }
 
@@ -101,49 +101,45 @@
 }
 
 @layer components {
+  /* Section backgrounds for visual rhythm */
+  .section-default {
+    background-color: hsl(var(--background));
+  }
+
+  .section-elevated {
+    background-color: hsl(var(--background-elevated));
+  }
+
+  .section-sunken {
+    background-color: hsl(var(--background-sunken));
+  }
+
+  /* Subtle grid pattern - monochrome */
   .grid-pattern {
-    background-image: var(--gradient-grid);
+    background-image:
+      linear-gradient(to right, hsl(220 6% 12% / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(220 6% 12% / 0.3) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 
-  .text-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(var(--foreground)) 0%, hsl(var(--muted-foreground)) 100%);
-  }
-
-  .text-gradient-primary {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(217 91% 70%) 100%);
-  }
-
+  /* Cards - clean, no gradients */
   .card-elevated {
-    background: var(--gradient-card);
+    background-color: hsl(var(--card));
     box-shadow: var(--shadow-card);
   }
 
-  .btn-glow {
-    box-shadow: var(--shadow-button);
+  /* Accent color class - use sparingly on visual elements only */
+  .accent-highlight {
+    color: hsl(var(--accent));
   }
 
-  .glow-effect {
-    box-shadow: var(--shadow-glow);
+  .accent-bg {
+    background-color: hsl(var(--accent));
   }
 
-  .border-gradient {
-    position: relative;
-  }
-
-  .border-gradient::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(135deg, hsl(var(--border)) 0%, hsl(222 30% 25%) 100%);
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
+  /* Border style - subtle */
+  .border-subtle {
+    border-color: hsl(var(--border));
   }
 }
 
@@ -175,4 +171,97 @@
       transform: translateY(0);
     }
   }
+
+  /* Stagger delay utilities for cascading animations */
+  .animate-delay-100 { animation-delay: 100ms; }
+  .animate-delay-200 { animation-delay: 200ms; }
+  .animate-delay-300 { animation-delay: 300ms; }
+  .animate-delay-400 { animation-delay: 400ms; }
+  .animate-delay-500 { animation-delay: 500ms; }
+  .animate-delay-600 { animation-delay: 600ms; }
+  .animate-delay-700 { animation-delay: 700ms; }
+  .animate-delay-800 { animation-delay: 800ms; }
+  .animate-delay-900 { animation-delay: 900ms; }
+  .animate-delay-1000 { animation-delay: 1000ms; }
+
+  /* Animation fill modes */
+  .animate-fill-both { animation-fill-mode: both; }
+  .animate-fill-forwards { animation-fill-mode: forwards; }
+
+  /* Smooth transition utilities */
+  .transition-400 { transition-duration: 400ms; }
+  .transition-600 { transition-duration: 600ms; }
+
+  /* Card hover - clean, monochrome */
+  .card-hover-lift {
+    @apply transition-all duration-300;
+  }
+
+  .card-hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Point cloud aesthetic background - subtle amber tint */
+  .point-cloud-bg {
+    background-image: radial-gradient(circle at 1px 1px, rgba(251, 191, 36, 0.03) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* Scanline pattern for technical sections */
+  .scanline-bg {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(251, 191, 36, 0.02) 2px,
+      rgba(251, 191, 36, 0.02) 4px
+    );
+    animation: scanline-move 10s linear infinite;
+  }
+
+  @keyframes scanline-move {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 100px; }
+  }
+
+  /* Remove gradient mesh - keep it empty for cleaner look */
+  .gradient-mesh {
+    /* Intentionally minimal */
+  }
+
+  /* Card lift effect - clean, monochrome */
+  .card-lift {
+    @apply transition-all duration-300;
+  }
+
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Slow spin animation for decorative elements */
+  .animate-spin-slow {
+    animation: spin 20s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+}
+
+/* Accessibility - Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Enhanced focus indicators for accessibility */
+*:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
 }
