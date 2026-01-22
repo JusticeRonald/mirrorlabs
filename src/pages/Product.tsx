@@ -29,16 +29,15 @@ const Product = () => {
               }`}
             >
               <span className="inline-block text-sm text-primary font-medium uppercase tracking-wider mb-4">
-                Platform Capabilities
+                Full-Service Platform
               </span>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold font-heading text-foreground mb-6 leading-tight">
-                Turn Any Space Into
+                Professional 3D Capture.
                 <br />
-                <span className="text-mirror-amber-400">A Collaboration Hub</span>
+                <span className="text-mirror-amber-400">Zero Hassle.</span>
               </h1>
               <p className="text-lg text-muted-foreground max-w-xl leading-relaxed">
-                Mirror Labs transforms spatial data into immersive 3D environments where distributed teams can measure,
-                mark up, and make decisions together—eliminating costly miscommunication.
+                We scan. You collaborate. Everyone stays aligned. Our team captures your spaces with professional-grade equipment—you get instant access to explore, measure, and share with your entire team.
               </p>
             </div>
 

@@ -46,7 +46,7 @@ const HowItWorks = () => {
         <div className="max-w-4xl mx-auto">
           <div className="grid md:grid-cols-4 gap-8">
             {steps.map((item, index) => (
-              <div key={index} className="relative">
+              <div key={item.title} className="relative">
                 {/* Connector Line */}
                 {index < steps.length - 1 && (
                   <div className="hidden md:block absolute top-8 left-full w-full h-px bg-border z-0" />

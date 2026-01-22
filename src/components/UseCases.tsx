@@ -10,27 +10,27 @@ const UseCases = () => {
     {
       icon: ConstructionIcon,
       name: "Construction",
-      tagline: "Coordinate trades, track progress",
+      tagline: "Catch MEP conflicts before they cost you",
     },
     {
       icon: RealEstateIcon,
       name: "Real Estate",
-      tagline: "Virtual tours, space documentation",
+      tagline: "Properties with 3D lease faster",
     },
     {
       icon: HospitalityIcon,
       name: "Hospitality",
-      tagline: "Venue capture, renovation planning",
+      tagline: "Plan renovations without disruption",
     },
     {
       icon: ForensicsIcon,
       name: "Forensics",
-      tagline: "Scene preservation, case review",
+      tagline: "Preserve scenes for remote review",
     },
     {
       icon: InsuranceIcon,
       name: "Insurance",
-      tagline: "Claims documentation, remote assessment",
+      tagline: "Assess claims without travel",
     },
   ];
 

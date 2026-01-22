@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getProjectsByIndustry, featuredProject, featuredScan, type Scan, type Project } from "@/data/mockProjects";
+import { getProjectsByIndustry, featuredProject, featuredScan, type Project } from "@/data/mockProjects";
 import { Ruler, MapPin, Share2, Download, Building2, Home, Landmark, Layers } from "lucide-react";
 import { useScrollAnimation, useStaggerAnimation } from "@/hooks/use-scroll-animation";
 
@@ -34,10 +34,12 @@ const industryConfig = {
 
 const Demo = () => {
   const [activeTab, setActiveTab] = useState<IndustryTab>("construction");
-  const [selectedProject, setSelectedProject] = useState<Project>(featuredProject);
-  const [selectedScan, setSelectedScan] = useState<Scan>(featuredScan);
   const viewerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  // Fixed demo project/scan - not changeable by user interaction
+  const demoProject = featuredProject;
+  const demoScan = featuredScan;
 
   const { ref: galleryHeaderRef, isVisible: galleryHeaderVisible } = useScrollAnimation();
   const { ref: galleryRef, isVisible: galleryVisible } = useScrollAnimation({ threshold: 0.1 });
@@ -45,14 +47,6 @@ const Demo = () => {
 
   // Get projects for current tab (limit to 3)
   const currentProjects = getProjectsByIndustry(activeTab).slice(0, 3);
-
-  // Handle project/scan selection for inline viewer preview
-  const handleScanSelect = (project: Project, scan: Scan) => {
-    setSelectedProject(project);
-    setSelectedScan(scan);
-    // Scroll to viewer
-    viewerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   // Navigate to full ViewerPage
   const handleViewProject = (project: Project) => {
@@ -95,19 +89,19 @@ const Demo = () => {
                     <div className="w-3 h-3 rounded-full bg-muted-foreground/30" />
                     <div className="w-3 h-3 rounded-full bg-muted-foreground/30" />
                   </div>
-                  <span className="text-foreground font-semibold">{selectedProject.name}</span>
+                  <span className="text-foreground font-semibold">{demoProject.name}</span>
                   <Badge className="bg-primary/10 text-primary border-primary/20">
-                    {selectedScan.name}
+                    {demoScan.name}
                   </Badge>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-muted-foreground text-sm">Last updated: {selectedScan.date}</span>
+                  <span className="text-muted-foreground text-sm">Last updated: {demoScan.date}</span>
                 </div>
               </div>
 
               {/* 3D Viewport - Live Three.js Scene */}
               <div className="aspect-video bg-gradient-to-br from-secondary via-background to-secondary relative overflow-hidden">
-                <Viewer3D className="w-full h-full" />
+                <Viewer3D className="w-full h-full" enableZoom={false} />
 
                 {/* Bottom Toolbar */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-md border border-border rounded-xl px-6 py-3 shadow-xl">
@@ -135,8 +129,8 @@ const Demo = () => {
               {/* Viewport Footer */}
               <div className="bg-secondary/30 border-t border-border px-6 py-4">
                 <p className="text-muted-foreground text-sm">
-                  This is a live Three.js 3D viewer. Use your mouse to rotate (drag), zoom (scroll),
-                  and explore the scene. Full measurement and annotation features coming soon.
+                  This is a live Three.js 3D viewer. Use your mouse to rotate (drag) and pan (right-click drag)
+                  to explore the scene. Full measurement and annotation features coming soon.
                 </p>
               </div>
             </div>
@@ -157,7 +151,7 @@ const Demo = () => {
           >
             <h2 className="text-3xl md:text-4xl font-bold font-heading text-foreground mb-4">Sample Projects</h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Explore real-world captures across industries. Click any scan to load it in the viewer above.
+              Explore real-world captures across industries. Click 'View Project' to open the full viewer.
             </p>
           </div>
 
@@ -193,9 +187,8 @@ const Demo = () => {
                   <Card
                     key={project.id}
                     style={staggerDelays[index]?.style || {}}
-                    className={`group bg-card border-border hover:border-primary/30 transition-all duration-300 card-lift overflow-hidden cursor-pointer ${galleryVisible ? 'opacity-100 translate-y-0 animate-tilt-in' : 'opacity-0 translate-y-10'
-                      } ${selectedProject.id === project.id ? 'ring-2 ring-primary' : ''}`}
-                    onClick={() => handleScanSelect(project, project.scans[0])}
+                    className={`group bg-card border-border hover:border-primary/30 transition-all duration-300 card-lift overflow-hidden ${galleryVisible ? 'opacity-100 translate-y-0 animate-tilt-in' : 'opacity-0 translate-y-10'
+                      }`}
                   >
                     <CardContent className="p-0">
                       {/* Thumbnail */}
@@ -228,10 +221,7 @@ const Demo = () => {
                           variant="outline"
                           size="sm"
                           className="w-full border-border text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewProject(project);
-                          }}
+                          onClick={() => handleViewProject(project)}
                         >
                           View Project
                         </Button>

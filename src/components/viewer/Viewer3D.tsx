@@ -13,6 +13,7 @@ interface Viewer3DProps {
   showGrid?: boolean;
   activeTool?: string | null;
   onSceneReady?: (sceneManager: SceneManager) => void;
+  enableZoom?: boolean;
 }
 
 const Viewer3D = ({
@@ -24,6 +25,7 @@ const Viewer3D = ({
   showGrid = true,
   activeTool = null,
   onSceneReady,
+  enableZoom = true,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -123,6 +125,7 @@ const Viewer3D = ({
     controls.maxPolarAngle = Math.PI * 0.9;
     controls.minDistance = 1;
     controls.maxDistance = 50;
+    controls.enableZoom = enableZoom;
     controlsRef.current = controls;
 
     // Lights
@@ -223,7 +226,7 @@ const Viewer3D = ({
         containerRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [scanId, modelUrl, showGrid, onSceneReady, handleClick]);
+  }, [scanId, modelUrl, showGrid, onSceneReady, handleClick, enableZoom]);
 
   // Reset view function exposed via ref
   const resetView = useCallback(() => {

@@ -62,7 +62,7 @@ const Features = () => {
         <div className="max-w-6xl mx-auto space-y-24">
           {features.map((feature, index) => (
             <FeatureRow
-              key={index}
+              key={feature.title}
               feature={feature}
               index={index}
               isReversed={index % 2 === 1}

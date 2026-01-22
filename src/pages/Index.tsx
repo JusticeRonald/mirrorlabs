@@ -1,6 +1,7 @@
 import Navigation from "@/components/Navigation";
 import Hero from "@/components/Hero";
 import Benefits from "@/components/Benefits";
+import WhyMirrorLabs from "@/components/WhyMirrorLabs";
 import Features from "@/components/Features";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
@@ -11,6 +12,7 @@ const Index = () => {
       <Navigation />
       <Hero />
       <Benefits />
+      <WhyMirrorLabs />
       <Features />
       <CTA />
       <Footer />

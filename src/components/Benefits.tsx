@@ -9,20 +9,20 @@ const Benefits = () => {
   const benefits = [
     {
       icon: CaptureIcon,
-      title: "Capture Reality. Once.",
-      description: "Real-time spatial documentation that outlives any conversation. Every detail preserved, every angle accessible, every decision informed.",
+      title: "We Capture. You Collaborate.",
+      description: "Our team handles the scanning with professional-grade equipment. You get instant access to explore, measure, and share with your entire team—no expensive gear, no learning curve, no waiting.",
       isPrimary: true,
     },
     {
       icon: MeasureIcon,
-      title: "Measure With Confidence",
-      description: "Precision at your fingertips, instantly shareable across your entire team.",
+      title: "Catch Issues Before They Cost",
+      description: "Spot conflicts in 3D before they become costly mistakes on-site. Teams report fewer change orders and faster decisions.",
       isPrimary: false,
     },
     {
       icon: CollaborateIcon,
-      title: "Align Instantly. Stay Aligned.",
-      description: "Collaboration that sticks—pin, annotate, resolve.",
+      title: "One Scan, Unlimited Views",
+      description: "Replace endless site visits with real-time 3D walkthroughs anyone can access—from anywhere.",
       isPrimary: false,
     },
   ];
@@ -78,7 +78,7 @@ const Benefits = () => {
             {/* Smaller cards - 2 columns, stacked */}
             {benefits.slice(1).map((benefit, index) => (
               <div
-                key={index}
+                key={benefit.title}
                 style={staggerDelays[index + 1].style}
                 className={`md:col-span-2 group relative p-8 rounded-2xl bg-card border border-border card-lift ${
                   cardsVisible ? 'opacity-100 animate-tilt-in' : 'opacity-0'

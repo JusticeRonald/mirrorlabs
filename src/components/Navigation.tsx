@@ -26,9 +26,22 @@ const Navigation = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Close mobile menu on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [mobileMenuOpen]);
+
   const navLinks = [
     { label: "Platform", href: "/product" },
     { label: "Use Cases", href: "/use-cases" },
+    { label: "Pricing", href: "/pricing" },
     { label: "Demo", href: "/demo" },
     { label: "Contact", href: "/contact" },
   ];
@@ -122,14 +135,17 @@ const Navigation = () => {
           <button
             className="md:hidden p-2 text-muted-foreground hover:text-foreground"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-menu"
           >
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            {mobileMenuOpen ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
           </button>
         </div>
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-border/50">
+          <div id="mobile-menu" className="md:hidden py-4 border-t border-border/50">
             <div className="flex flex-col gap-2">
               {navLinks.map((link) => (
                 <Link

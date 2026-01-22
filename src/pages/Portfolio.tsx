@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   FolderOpen,
   Archive,
@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import RoleBadge from '@/components/ui/role-badge';
-import ProjectsNavigation from '@/components/ProjectsNavigation';
+import ProjectsNavigation, { NavFilter } from '@/components/ProjectsNavigation';
 import {
   mockProjects,
   getActiveProjects,
@@ -37,18 +37,37 @@ type ViewMode = 'grid' | 'list';
 type FilterMode = 'all' | 'owned' | 'shared';
 
 const Portfolio = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Get nav filter from URL params
+  const urlFilter = (searchParams.get('filter') as NavFilter) || 'all';
+
+  // Handle nav filter change
+  const handleNavFilterChange = (filter: NavFilter) => {
+    if (filter === 'all') {
+      searchParams.delete('filter');
+    } else {
+      searchParams.set('filter', filter);
+    }
+    setSearchParams(searchParams);
+  };
+
   const activeProjects = getActiveProjects();
   const archivedProjects = getArchivedProjects();
 
-  // Filter projects based on filter mode
+  // Filter projects based on filter mode and nav filter
   const filterProjects = (projects: typeof activeProjects) => {
-    let filtered = projects;
+    let filtered = [...projects];
 
-    // Apply filter mode
+    // Apply nav filter from URL params (shared/recent)
+    if (urlFilter === 'shared') {
+      filtered = filtered.filter(p => p.userRole !== 'owner');
+    }
+
+    // Apply dropdown filter mode
     if (filterMode === 'owned') {
       filtered = filtered.filter(p => p.userRole === 'owner');
     } else if (filterMode === 'shared') {
@@ -61,6 +80,13 @@ const Portfolio = () => {
       filtered = filtered.filter(p =>
         p.name.toLowerCase().includes(query) ||
         p.description.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply sorting for "recent" filter
+    if (urlFilter === 'recent') {
+      filtered.sort((a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
     }
 
@@ -78,7 +104,10 @@ const Portfolio = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <ProjectsNavigation />
+      <ProjectsNavigation
+        currentFilter={urlFilter}
+        onFilterChange={handleNavFilterChange}
+      />
 
       <main className="pt-16">
         <div className="container mx-auto px-6 py-8">

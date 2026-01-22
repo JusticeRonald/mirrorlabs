@@ -23,19 +23,19 @@ const Hero = () => {
           {/* Headline - staggered line reveal */}
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold font-heading tracking-tight mb-6">
             <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '0ms' }}>
-              Fewer mistakes.
+              Your entire team.
             </span>
             <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '100ms' }}>
-              Clearer decisions.
+              One shared reality.
             </span>
             <span className="block text-mirror-amber-400 animate-line-reveal" style={{ animationDelay: '200ms' }}>
-              Shared 3D context.
+              Instant alignment.
             </span>
           </h1>
 
           {/* Subheadline */}
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-up" style={{ animationDelay: "300ms" }}>
-            Mirror Labs lets teams explore, measure, and annotate real-world spaces in interactive 3D—so everyone sees the same thing and stays aligned.
+            We capture your spaces in stunning 3D. Your distributed team explores, measures, and makes decisions together—no travel, no confusion, no delays.
           </p>
 
           {/* CTAs */}
@@ -139,18 +139,18 @@ const Hero = () => {
 
               {/* Bottom Toolbar */}
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-card/90 backdrop-blur-sm border border-border shadow-xl">
-                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all">
-                  <Ruler className="w-5 h-5 text-primary" />
+                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all" aria-label="Measure tool">
+                  <Ruler className="w-5 h-5 text-primary" aria-hidden="true" />
                 </button>
-                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all">
-                  <Pin className="w-5 h-5 text-muted-foreground" />
+                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all" aria-label="Add annotation">
+                  <Pin className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 </button>
-                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all">
-                  <RotateCcw className="w-5 h-5 text-muted-foreground" />
+                <button className="group p-2.5 rounded-lg hover:bg-secondary transition-all" aria-label="Reset view">
+                  <RotateCcw className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 </button>
-                <div className="w-px h-6 bg-border mx-1" />
-                <button className="group p-2.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all">
-                  <Share2 className="w-5 h-5" />
+                <div className="w-px h-6 bg-border mx-1" aria-hidden="true" />
+                <button className="group p-2.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all" aria-label="Share project">
+                  <Share2 className="w-5 h-5" aria-hidden="true" />
                 </button>
               </div>
             </div>
