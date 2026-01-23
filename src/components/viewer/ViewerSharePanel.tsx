@@ -118,8 +118,7 @@ const ViewerSharePanel = ({ isOpen, onClose, permissions, projectId, scanId }: V
                 <button
                   className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors"
                   onClick={() => {
-                    // In production, this would capture the current view
-                    console.log('Capturing screenshot...');
+                    // TODO: Implement screenshot capture using renderer.domElement.toDataURL()
                   }}
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
@@ -135,8 +134,7 @@ const ViewerSharePanel = ({ isOpen, onClose, permissions, projectId, scanId }: V
                 <button
                   className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors"
                   onClick={() => {
-                    // In production, this would export measurements as CSV
-                    console.log('Exporting measurements...');
+                    // TODO: Implement measurements CSV export
                   }}
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
@@ -152,8 +150,7 @@ const ViewerSharePanel = ({ isOpen, onClose, permissions, projectId, scanId }: V
                 <button
                   className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors col-span-2"
                   onClick={() => {
-                    // In production, this would download the model
-                    console.log('Downloading model...');
+                    // TODO: Implement model download functionality
                   }}
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">

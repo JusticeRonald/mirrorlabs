@@ -1,6 +1,15 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import * as THREE from 'three';
-import { ViewerState, Measurement, Annotation, ViewMode, defaultViewerState } from '@/types/viewer';
+import {
+  ViewerState,
+  Measurement,
+  Annotation,
+  ViewMode,
+  defaultViewerState,
+  SplatLoadProgress,
+  SplatSceneMetadata,
+  SplatLoadError,
+} from '@/types/viewer';
 import { UserRole, ROLE_PERMISSIONS, RolePermissions } from '@/types/user';
 
 interface ViewerContextType {
@@ -29,6 +38,13 @@ interface ViewerContextType {
 
   // Selection
   selectObject: (id: string | null) => void;
+
+  // Splat Loading
+  setSplatLoading: (loading: boolean) => void;
+  setSplatProgress: (progress: SplatLoadProgress | null) => void;
+  setSplatError: (error: SplatLoadError | null) => void;
+  setSplatMetadata: (metadata: SplatSceneMetadata | null) => void;
+  clearSplatScene: () => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | null>(null);
@@ -140,6 +156,47 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({ ...prev, selectedObjectId: id }));
   }, []);
 
+  // Splat Loading
+  const setSplatLoading = useCallback((loading: boolean) => {
+    setState(prev => ({
+      ...prev,
+      splatLoadingState: loading ? 'loading' : (prev.splatMetadata ? 'loaded' : 'idle'),
+      splatLoadError: loading ? null : prev.splatLoadError,
+    }));
+  }, []);
+
+  const setSplatProgress = useCallback((progress: SplatLoadProgress | null) => {
+    setState(prev => ({ ...prev, splatLoadProgress: progress }));
+  }, []);
+
+  const setSplatError = useCallback((error: SplatLoadError | null) => {
+    setState(prev => ({
+      ...prev,
+      splatLoadingState: error ? 'error' : prev.splatLoadingState,
+      splatLoadError: error,
+      splatLoadProgress: null,
+    }));
+  }, []);
+
+  const setSplatMetadata = useCallback((metadata: SplatSceneMetadata | null) => {
+    setState(prev => ({
+      ...prev,
+      splatLoadingState: metadata ? 'loaded' : 'idle',
+      splatMetadata: metadata,
+      splatLoadProgress: null,
+    }));
+  }, []);
+
+  const clearSplatScene = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      splatLoadingState: 'idle',
+      splatLoadProgress: null,
+      splatLoadError: null,
+      splatMetadata: null,
+    }));
+  }, []);
+
   const value: ViewerContextType = {
     state,
     permissions,
@@ -157,6 +214,11 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     addAnnotationReply,
     clearAnnotations,
     selectObject,
+    setSplatLoading,
+    setSplatProgress,
+    setSplatError,
+    setSplatMetadata,
+    clearSplatScene,
   };
 
   return (

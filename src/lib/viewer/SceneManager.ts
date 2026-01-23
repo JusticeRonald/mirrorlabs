@@ -1,10 +1,15 @@
 import * as THREE from 'three';
+import type {
+  GaussianSplatRenderer,
+  SplatMetadata,
+  SplatLoadProgress,
+} from './renderers';
 
 /**
  * SceneManager - Orchestrates Three.js scene operations
  *
  * This class provides a clean API for managing 3D objects, annotations,
- * measurements, and other scene entities. It works alongside @react-three/fiber
+ * measurements, and other scene entities. It works with vanilla Three.js
  * to provide advanced scene management capabilities.
  */
 export class SceneManager {
@@ -12,12 +17,93 @@ export class SceneManager {
   private objects: Map<string, THREE.Object3D>;
   private annotations: Map<string, THREE.Group>;
   private measurements: Map<string, THREE.Group>;
+  private splatRenderer: GaussianSplatRenderer | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.objects = new Map();
     this.annotations = new Map();
     this.measurements = new Map();
+  }
+
+  /**
+   * Set the Gaussian Splat renderer to use
+   */
+  setSplatRenderer(renderer: GaussianSplatRenderer): void {
+    // Dispose of existing renderer if any
+    if (this.splatRenderer) {
+      this.splatRenderer.dispose();
+    }
+    this.splatRenderer = renderer;
+  }
+
+  /**
+   * Get the current splat renderer
+   */
+  getSplatRenderer(): GaussianSplatRenderer | null {
+    return this.splatRenderer;
+  }
+
+  /**
+   * Load a Gaussian Splat scene from a URL
+   * @param url URL to the splat file
+   * @param onProgress Optional progress callback
+   * @returns Promise that resolves with metadata when loading completes
+   */
+  async loadSplat(
+    url: string,
+    onProgress?: (progress: SplatLoadProgress) => void
+  ): Promise<SplatMetadata> {
+    if (!this.splatRenderer) {
+      throw new Error('No splat renderer configured. Call setSplatRenderer first.');
+    }
+
+    // Clear any existing main model
+    if (this.objects.has('main-model')) {
+      this.removeObject('main-model');
+    }
+
+    // Load the splat scene
+    const metadata = await this.splatRenderer.loadFromUrl(url, onProgress);
+
+    // Track the splat mesh as the main model
+    const mesh = this.splatRenderer.getMesh();
+    if (mesh) {
+      this.objects.set('splat-scene', mesh);
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Clear the current splat scene
+   */
+  clearSplat(): void {
+    if (this.splatRenderer) {
+      this.splatRenderer.dispose();
+    }
+    this.objects.delete('splat-scene');
+  }
+
+  /**
+   * Check if a splat scene is loaded
+   */
+  hasSplatLoaded(): boolean {
+    return this.splatRenderer?.isLoaded() ?? false;
+  }
+
+  /**
+   * Update the splat renderer (call each frame)
+   */
+  updateSplat(camera: THREE.Camera, deltaTime: number): void {
+    this.splatRenderer?.update(camera, deltaTime);
+  }
+
+  /**
+   * Get the splat scene bounding box
+   */
+  getSplatBoundingBox(): THREE.Box3 | null {
+    return this.splatRenderer?.getBoundingBox() ?? null;
   }
 
   /**
@@ -185,6 +271,12 @@ export class SceneManager {
     this.measurements.forEach((measurement, id) => {
       this.removeMeasurement(id);
     });
+
+    // Dispose splat renderer
+    if (this.splatRenderer) {
+      this.splatRenderer.dispose();
+      this.splatRenderer = null;
+    }
   }
 }
 

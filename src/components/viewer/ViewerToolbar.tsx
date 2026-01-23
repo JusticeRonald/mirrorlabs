@@ -62,11 +62,13 @@ interface ToolButtonProps {
   shortcut?: string;
   requiresAuth?: boolean;
   isLoggedIn?: boolean;
+  comingSoon?: boolean;
   onClick: () => void;
 }
 
-const ToolButton = ({ id, name, icon: Icon, active, disabled, shortcut, requiresAuth, isLoggedIn, onClick }: ToolButtonProps) => {
-  const showLoginPrompt = requiresAuth && disabled && !isLoggedIn;
+const ToolButton = ({ id, name, icon: Icon, active, disabled, shortcut, requiresAuth, isLoggedIn, comingSoon, onClick }: ToolButtonProps) => {
+  const showLoginPrompt = requiresAuth && disabled && !isLoggedIn && !comingSoon;
+  const isDisabled = disabled || comingSoon;
 
   return (
     <Tooltip>
@@ -77,9 +79,9 @@ const ToolButton = ({ id, name, icon: Icon, active, disabled, shortcut, requires
           className={cn(
             'h-9 w-9 transition-all relative',
             active && 'bg-primary/20 text-primary border border-primary/30',
-            disabled && 'opacity-50 cursor-not-allowed'
+            isDisabled && 'opacity-50 cursor-not-allowed'
           )}
-          disabled={disabled}
+          disabled={isDisabled}
           onClick={onClick}
         >
           <Icon className="h-4 w-4" />
@@ -93,6 +95,9 @@ const ToolButton = ({ id, name, icon: Icon, active, disabled, shortcut, requires
           <span>{name}</span>
           {shortcut && <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">{shortcut}</kbd>}
         </div>
+        {comingSoon && (
+          <span className="text-xs text-muted-foreground">Coming soon</span>
+        )}
         {showLoginPrompt && (
           <span className="text-xs text-muted-foreground">Log in to use this tool</span>
         )}
@@ -174,6 +179,7 @@ const ViewerToolbar = ({
             disabled={!permissions.canMeasure}
             requiresAuth
             isLoggedIn={isLoggedIn}
+            comingSoon
             shortcut="D"
             onClick={() => handleToolClick('distance')}
           />
@@ -185,6 +191,7 @@ const ViewerToolbar = ({
             disabled={!permissions.canMeasure}
             requiresAuth
             isLoggedIn={isLoggedIn}
+            comingSoon
             shortcut="A"
             onClick={() => handleToolClick('area')}
           />
@@ -196,6 +203,7 @@ const ViewerToolbar = ({
             disabled={!permissions.canMeasure}
             requiresAuth
             isLoggedIn={isLoggedIn}
+            comingSoon
             onClick={() => handleToolClick('angle')}
           />
         </div>
@@ -212,6 +220,7 @@ const ViewerToolbar = ({
             disabled={!permissions.canAnnotate}
             requiresAuth
             isLoggedIn={isLoggedIn}
+            comingSoon
             onClick={() => handleToolClick('pin')}
           />
           <ToolButton
@@ -222,6 +231,7 @@ const ViewerToolbar = ({
             disabled={!permissions.canAnnotate}
             requiresAuth
             isLoggedIn={isLoggedIn}
+            comingSoon
             shortcut="C"
             onClick={() => handleToolClick('comment')}
           />

@@ -4,6 +4,8 @@ import Navigation from "@/components/Navigation";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 import Viewer3D from "@/components/viewer/Viewer3D";
+import ViewerLoadingOverlay from "@/components/viewer/ViewerLoadingOverlay";
+import type { SplatLoadProgress, SplatLoadError } from "@/types/viewer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,9 @@ const industryConfig = {
 
 const Demo = () => {
   const [activeTab, setActiveTab] = useState<IndustryTab>("construction");
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<SplatLoadProgress | null>(null);
+  const [loadError, setLoadError] = useState<SplatLoadError | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -101,7 +106,28 @@ const Demo = () => {
 
               {/* 3D Viewport - Live Three.js Scene */}
               <div className="aspect-video bg-gradient-to-br from-secondary via-background to-secondary relative overflow-hidden">
-                <Viewer3D className="w-full h-full" enableZoom={false} />
+                <Viewer3D
+                  className="w-full h-full"
+                  splatUrl="/splats/demo.ply"
+                  showGrid={true}
+                  enableZoom={false}
+                  onSplatLoadStart={() => {
+                    setIsLoading(true);
+                    setLoadProgress(null);
+                    setLoadError(null);
+                  }}
+                  onSplatLoadProgress={(progress) => setLoadProgress(progress)}
+                  onSplatLoadComplete={() => setIsLoading(false)}
+                  onSplatLoadError={(err) => {
+                    setIsLoading(false);
+                    setLoadError({ message: err.message });
+                  }}
+                />
+                <ViewerLoadingOverlay
+                  isLoading={isLoading}
+                  progress={loadProgress}
+                  error={loadError}
+                />
 
                 {/* Bottom Toolbar */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-md border border-border rounded-xl px-6 py-3 shadow-xl">

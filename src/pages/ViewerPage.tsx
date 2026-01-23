@@ -8,9 +8,11 @@ import ViewerToolbar from '@/components/viewer/ViewerToolbar';
 import ViewerSidebar from '@/components/viewer/ViewerSidebar';
 import ViewerHeader from '@/components/viewer/ViewerHeader';
 import ViewerSharePanel from '@/components/viewer/ViewerSharePanel';
+import ViewerLoadingOverlay from '@/components/viewer/ViewerLoadingOverlay';
 import { getProjectById, getScanById } from '@/data/mockProjects';
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { UserRole } from '@/types/user';
+import type { SplatLoadProgress, SplatLoadError } from '@/types/viewer';
 
 // Inner component that uses the ViewerContext
 const ViewerContent = () => {
@@ -29,6 +31,9 @@ const ViewerContent = () => {
 
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<SplatLoadProgress | null>(null);
+  const [loadError, setLoadError] = useState<SplatLoadError | null>(null);
 
   // Get project and scan data
   const project = projectId ? getProjectById(projectId) : null;
@@ -82,11 +87,30 @@ const ViewerContent = () => {
         className="absolute inset-0"
         scanId={scanId}
         modelUrl={scan.modelUrl}
+        splatUrl="/splats/demo.ply"
         onPointSelect={handlePointSelect}
         viewMode={state.viewMode}
         showGrid={state.showGrid}
         activeTool={state.activeTool}
         onSceneReady={handleSceneReady}
+        onSplatLoadStart={() => {
+          setIsLoading(true);
+          setLoadProgress(null);
+          setLoadError(null);
+        }}
+        onSplatLoadProgress={(progress) => setLoadProgress(progress)}
+        onSplatLoadComplete={() => setIsLoading(false)}
+        onSplatLoadError={(err) => {
+          setIsLoading(false);
+          setLoadError({ message: err.message });
+        }}
+      />
+
+      {/* Loading Overlay */}
+      <ViewerLoadingOverlay
+        isLoading={isLoading}
+        progress={loadProgress}
+        error={loadError}
       />
 
       {/* Header */}

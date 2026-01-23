@@ -5,6 +5,45 @@ export type AnnotationType = 'pin' | 'comment' | 'markup';
 export type ViewMode = 'solid' | 'wireframe' | 'points';
 export type NavigationTool = 'pan' | 'orbit' | 'zoom';
 
+/**
+ * Supported splat file formats
+ */
+export type SplatFileFormat = 'ply' | 'spz' | 'splat' | 'ksplat' | 'pcsogs';
+
+/**
+ * Loading state for splat files
+ */
+export type SplatLoadingState = 'idle' | 'loading' | 'loaded' | 'error';
+
+/**
+ * Metadata about a loaded splat scene
+ */
+export interface SplatSceneMetadata {
+  splatCount: number;
+  boundingBox: THREE.Box3 | null;
+  fileType: string;
+  loadTimeMs: number;
+  url: string;
+}
+
+/**
+ * Progress information during splat loading
+ */
+export interface SplatLoadProgress {
+  loaded: number;
+  total: number;
+  percentage: number;
+}
+
+/**
+ * Error information for splat loading failures
+ */
+export interface SplatLoadError {
+  message: string;
+  code?: string;
+  url?: string;
+}
+
 export interface Measurement {
   id: string;
   type: MeasurementType;
@@ -42,6 +81,12 @@ export interface ViewerState {
   selectedObjectId: string | null;
   measurements: Measurement[];
   annotations: Annotation[];
+
+  // Splat loading state
+  splatLoadingState: SplatLoadingState;
+  splatLoadProgress: SplatLoadProgress | null;
+  splatLoadError: SplatLoadError | null;
+  splatMetadata: SplatSceneMetadata | null;
 }
 
 export interface ViewerSettings {
@@ -71,6 +116,12 @@ export const defaultViewerState: ViewerState = {
   selectedObjectId: null,
   measurements: [],
   annotations: [],
+
+  // Splat loading state
+  splatLoadingState: 'idle',
+  splatLoadProgress: null,
+  splatLoadError: null,
+  splatMetadata: null,
 };
 
 // Tool definitions for the viewer toolbar
