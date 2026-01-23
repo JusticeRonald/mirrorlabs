@@ -1,18 +1,71 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import * as THREE from "three";
 import Navigation from "@/components/Navigation";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 import Viewer3D from "@/components/viewer/Viewer3D";
 import ViewerLoadingOverlay from "@/components/viewer/ViewerLoadingOverlay";
-import type { SplatLoadProgress, SplatLoadError } from "@/types/viewer";
+import ViewerToolbar from "@/components/viewer/ViewerToolbar";
+import ViewerSidebar from "@/components/viewer/ViewerSidebar";
+import ViewerHeader from "@/components/viewer/ViewerHeader";
+import type { SplatLoadProgress, SplatLoadError, Measurement, Annotation, ViewMode } from "@/types/viewer";
+import { ROLE_PERMISSIONS } from "@/types/user";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getProjectsByIndustry, featuredProject, featuredScan, type Project } from "@/data/mockProjects";
-import { Ruler, MapPin, Share2, Download, Building2, Home, Landmark, Layers } from "lucide-react";
+import { Building2, Home, Landmark, Layers } from "lucide-react";
 import { useScrollAnimation, useStaggerAnimation } from "@/hooks/use-scroll-animation";
+
+// Demo placeholder data to show what the full viewer experience looks like
+const demoMeasurements: Measurement[] = [
+  {
+    id: 'demo-1',
+    type: 'distance',
+    value: 3.45,
+    unit: 'm',
+    label: 'Wall to window',
+    points: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(3.45, 0, 0)],
+    createdBy: 'Demo User',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-2',
+    type: 'area',
+    value: 12.8,
+    unit: 'm²',
+    label: 'Floor section',
+    points: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 0, 0), new THREE.Vector3(4, 0, 3.2), new THREE.Vector3(0, 0, 3.2)],
+    createdBy: 'Demo User',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const demoAnnotations: Annotation[] = [
+  {
+    id: 'demo-a1',
+    type: 'comment',
+    content: 'Check electrical outlet placement',
+    position: new THREE.Vector3(1, 1.2, 0),
+    createdBy: 'Demo User',
+    createdAt: new Date().toISOString(),
+    replies: [
+      { id: 'r1', content: 'Will verify on site visit', createdBy: 'Contractor', createdAt: new Date().toISOString() },
+      { id: 'r2', content: 'Confirmed placement is correct', createdBy: 'Engineer', createdAt: new Date().toISOString() },
+    ],
+  },
+  {
+    id: 'demo-a2',
+    type: 'pin',
+    content: 'Confirm ceiling height with contractor',
+    position: new THREE.Vector3(2, 2.5, 1),
+    createdBy: 'Demo User',
+    createdAt: new Date().toISOString(),
+    replies: [],
+  },
+];
 
 type IndustryTab = 'construction' | 'real-estate' | 'cultural';
 
@@ -39,12 +92,43 @@ const Demo = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState<SplatLoadProgress | null>(null);
   const [loadError, setLoadError] = useState<SplatLoadError | null>(null);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [showGrid, setShowGrid] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('solid');
   const viewerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   // Fixed demo project/scan - not changeable by user interaction
   const demoProject = featuredProject;
   const demoScan = featuredScan;
+
+  // Demo permissions (viewer role - limited capabilities)
+  const demoPermissions = ROLE_PERMISSIONS['viewer'];
+
+  // Handlers for toolbar (read-only mode - these are mostly no-ops for demo)
+  const handleToolChange = useCallback((tool: string | null) => {
+    setActiveTool(tool);
+  }, []);
+
+  const handleToggleGrid = useCallback(() => {
+    setShowGrid(prev => !prev);
+  }, []);
+
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    // Reset view would be handled by the 3D viewer
+  }, []);
+
+  const handleShare = useCallback(() => {
+    // Demo share action
+  }, []);
+
+  const handleExport = useCallback(() => {
+    // Demo export action
+  }, []);
 
   const { ref: galleryHeaderRef, isVisible: galleryHeaderVisible } = useScrollAnimation();
   const { ref: galleryRef, isVisible: galleryVisible } = useScrollAnimation({ threshold: 0.1 });
@@ -86,30 +170,33 @@ const Demo = () => {
           {/* Featured Demo Viewport */}
           <div className="relative group">
             <div className="relative bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
-              {/* Viewport Header */}
-              <div className="bg-secondary/30 border-b border-border px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-muted-foreground/30" />
-                    <div className="w-3 h-3 rounded-full bg-muted-foreground/30" />
-                    <div className="w-3 h-3 rounded-full bg-muted-foreground/30" />
-                  </div>
-                  <span className="text-foreground font-semibold">{demoProject.name}</span>
-                  <Badge className="bg-primary/10 text-primary border-primary/20">
-                    {demoScan.name}
-                  </Badge>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-muted-foreground text-sm">Last updated: {demoScan.date}</span>
-                </div>
-              </div>
+              {/* 3D Viewport - Live Three.js Scene with full viewer UI */}
+              <div className="h-[600px] min-h-[500px] max-h-[80vh] bg-gradient-to-br from-secondary via-background to-secondary relative overflow-hidden">
+                {/* Viewer Header - Demo variant */}
+                <ViewerHeader
+                  project={demoProject}
+                  scan={demoScan}
+                  userRole="viewer"
+                  onShare={handleShare}
+                  variant="demo"
+                />
 
-              {/* 3D Viewport - Live Three.js Scene */}
-              <div className="aspect-video bg-gradient-to-br from-secondary via-background to-secondary relative overflow-hidden">
+                {/* Viewer Sidebar - with demo placeholder data */}
+                <ViewerSidebar
+                  measurements={demoMeasurements}
+                  annotations={demoAnnotations}
+                  permissions={demoPermissions}
+                  defaultCollapsed={true}
+                  readOnly={true}
+                />
+
+                {/* 3D Canvas */}
                 <Viewer3D
                   className="w-full h-full"
                   splatUrl="/splats/demo.ply"
-                  showGrid={true}
+                  showGrid={showGrid}
+                  viewMode={viewMode}
+                  activeTool={activeTool}
                   enableZoom={false}
                   onSplatLoadStart={() => {
                     setIsLoading(true);
@@ -123,40 +210,35 @@ const Demo = () => {
                     setLoadError({ message: err.message });
                   }}
                 />
+
+                {/* Loading Overlay */}
                 <ViewerLoadingOverlay
                   isLoading={isLoading}
                   progress={loadProgress}
                   error={loadError}
                 />
 
-                {/* Bottom Toolbar */}
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-md border border-border rounded-xl px-6 py-3 shadow-xl">
-                  <div className="flex items-center space-x-6">
-                    <button className="flex flex-col items-center space-y-1 text-primary hover:text-primary/80 transition-colors">
-                      <Ruler className="w-5 h-5" />
-                      <span className="text-xs">Measure</span>
-                    </button>
-                    <button className="flex flex-col items-center space-y-1 text-muted-foreground hover:text-primary transition-colors">
-                      <MapPin className="w-5 h-5" />
-                      <span className="text-xs">Annotate</span>
-                    </button>
-                    <button className="flex flex-col items-center space-y-1 text-muted-foreground hover:text-primary transition-colors">
-                      <Share2 className="w-5 h-5" />
-                      <span className="text-xs">Share</span>
-                    </button>
-                    <button className="flex flex-col items-center space-y-1 text-muted-foreground hover:text-primary transition-colors">
-                      <Download className="w-5 h-5" />
-                      <span className="text-xs">Export</span>
-                    </button>
-                  </div>
-                </div>
+                {/* Viewer Toolbar - simplified demo variant */}
+                <ViewerToolbar
+                  activeTool={activeTool}
+                  onToolChange={handleToolChange}
+                  permissions={demoPermissions}
+                  showGrid={showGrid}
+                  onToggleGrid={handleToggleGrid}
+                  viewMode={viewMode}
+                  onViewModeChange={handleViewModeChange}
+                  onResetView={handleResetView}
+                  onShare={handleShare}
+                  onExport={handleExport}
+                  variant="demo"
+                />
               </div>
 
               {/* Viewport Footer */}
               <div className="bg-secondary/30 border-t border-border px-6 py-4">
                 <p className="text-muted-foreground text-sm">
-                  This is a live Three.js 3D viewer. Use your mouse to rotate (drag) and pan (right-click drag)
-                  to explore the scene. Full measurement and annotation features coming soon.
+                  This is a live 3D Gaussian Splat viewer. Use your mouse to rotate (drag) and pan (right-click drag)
+                  to explore the scene. Scroll zoom is disabled to prevent page scroll conflicts.
                 </p>
               </div>
             </div>

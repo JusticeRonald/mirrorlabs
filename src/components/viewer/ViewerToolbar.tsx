@@ -34,6 +34,7 @@ interface ViewerToolbarProps {
   onResetView: () => void;
   onShare: () => void;
   onExport: () => void;
+  variant?: 'full' | 'demo';
 }
 
 const iconMap: Record<string, React.ElementType> = {
@@ -117,6 +118,7 @@ const ViewerToolbar = ({
   onResetView,
   onShare,
   onExport,
+  variant = 'full',
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -127,6 +129,32 @@ const ViewerToolbar = ({
       onToolChange(toolId);
     }
   };
+
+  // Demo variant: only show Reset View and Grid Toggle
+  if (variant === 'demo') {
+    return (
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+        <div className="flex items-center gap-1 px-3 py-2 rounded-xl bg-card/90 backdrop-blur-md border border-border shadow-lg">
+          <ToolButton
+            id="reset"
+            name="Reset View"
+            icon={Maximize}
+            active={false}
+            shortcut="R"
+            onClick={onResetView}
+          />
+          <ToolButton
+            id="grid"
+            name="Toggle Grid"
+            icon={Grid3X3}
+            active={showGrid}
+            shortcut="G"
+            onClick={onToggleGrid}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">

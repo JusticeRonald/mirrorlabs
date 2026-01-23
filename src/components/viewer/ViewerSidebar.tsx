@@ -15,6 +15,8 @@ interface ViewerSidebarProps {
   onDeleteAnnotation?: (id: string) => void;
   onSelectMeasurement?: (id: string) => void;
   onSelectAnnotation?: (id: string) => void;
+  defaultCollapsed?: boolean;
+  readOnly?: boolean;
 }
 
 interface SidebarSectionProps {
@@ -57,8 +59,10 @@ const ViewerSidebar = ({
   onDeleteAnnotation,
   onSelectMeasurement,
   onSelectAnnotation,
+  defaultCollapsed = false,
+  readOnly = false,
 }: ViewerSidebarProps) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   if (isCollapsed) {
     return (
@@ -120,7 +124,7 @@ const ViewerSidebar = ({
                         {m.type} measurement
                       </p>
                     </div>
-                    {permissions.canMeasure && onDeleteMeasurement && (
+                    {permissions.canMeasure && onDeleteMeasurement && !readOnly && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -166,7 +170,7 @@ const ViewerSidebar = ({
                         {a.replies?.length || 0} replies
                       </p>
                     </div>
-                    {permissions.canAnnotate && onDeleteAnnotation && (
+                    {permissions.canAnnotate && onDeleteAnnotation && !readOnly && (
                       <Button
                         variant="ghost"
                         size="icon"

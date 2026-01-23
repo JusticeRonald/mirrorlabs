@@ -348,7 +348,7 @@ const Viewer3D = ({
         containerRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [scanId, modelUrl, showGrid, onSceneReady, handleClick, enableZoom, splatUrl]);
+  }, [scanId, modelUrl, onSceneReady, handleClick, enableZoom, splatUrl]);
 
   // Load splat when URL changes (must run AFTER main scene setup)
   useEffect(() => {
