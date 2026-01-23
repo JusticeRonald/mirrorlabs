@@ -1,65 +1,67 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Maximize2, Share2, Pin, Ruler, Eye, RotateCcw, Move3d } from "lucide-react";
+import { ArrowRight, Share2, Pin, Ruler, Eye, RotateCcw, Move3d } from "lucide-react";
 import { useParallax } from "@/hooks/use-scroll-animation";
 
 const Hero = () => {
   const { offset } = useParallax(0.6);
 
   return (
-    <section className="relative min-h-screen pt-32 pb-20 overflow-hidden">
+    <section className="relative min-h-[calc(100vh-80px)] pt-24 pb-12 lg:pb-0 overflow-hidden flex items-center">
       {/* Background layers with depth */}
       <div className="absolute inset-0 point-cloud-bg opacity-30" />
       <div className="absolute inset-0 gradient-mesh" />
 
       <div className="container mx-auto px-6 relative z-10">
-        <div className="max-w-4xl mx-auto text-center mb-16">
-          {/* Badge - refined without pulse */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border mb-8 animate-fade-in">
-            <span className="w-2 h-2 rounded-full bg-primary" />
-            <span className="text-sm text-muted-foreground">Now in early access</span>
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
+          {/* Text Column */}
+          <div className="text-center lg:text-left order-2 lg:order-1">
+            {/* Badge - refined without pulse */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border mb-8 animate-fade-in">
+              <span className="w-2 h-2 rounded-full bg-primary" />
+              <span className="text-sm text-muted-foreground">Now in early access</span>
+            </div>
+
+            {/* Headline - staggered line reveal */}
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold font-heading tracking-tight mb-6">
+              <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '0ms' }}>
+                Your entire team.
+              </span>
+              <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '100ms' }}>
+                One shared reality.
+              </span>
+              <span className="block text-mirror-amber-400 animate-line-reveal" style={{ animationDelay: '200ms' }}>
+                Instant alignment.
+              </span>
+            </h1>
+
+            {/* Subheadline */}
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto lg:mx-0 mb-10 animate-fade-up" style={{ animationDelay: "300ms" }}>
+              We capture your spaces in stunning 3D. Your distributed team explores, measures, and makes decisions together—no travel, no confusion, no delays.
+            </p>
+
+            {/* CTAs */}
+            <div className="flex flex-col sm:flex-row items-center lg:items-start justify-center lg:justify-start gap-4 animate-fade-up" style={{ animationDelay: "400ms" }}>
+              <Button variant="hero" size="xl" asChild>
+                <Link to="/contact">
+                  Request Access
+                  <ArrowRight className="ml-1" />
+                </Link>
+              </Button>
+              <Button variant="heroOutline" size="xl" asChild>
+                <Link to="/demo">View Demo</Link>
+              </Button>
+            </div>
           </div>
 
-          {/* Headline - staggered line reveal */}
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold font-heading tracking-tight mb-6">
-            <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '0ms' }}>
-              Your entire team.
-            </span>
-            <span className="block text-foreground animate-line-reveal" style={{ animationDelay: '100ms' }}>
-              One shared reality.
-            </span>
-            <span className="block text-mirror-amber-400 animate-line-reveal" style={{ animationDelay: '200ms' }}>
-              Instant alignment.
-            </span>
-          </h1>
-
-          {/* Subheadline */}
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-up" style={{ animationDelay: "300ms" }}>
-            We capture your spaces in stunning 3D. Your distributed team explores, measures, and makes decisions together—no travel, no confusion, no delays.
-          </p>
-
-          {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-fade-up" style={{ animationDelay: "400ms" }}>
-            <Button variant="hero" size="xl" asChild>
-              <Link to="/contact">
-                Request Access
-                <ArrowRight className="ml-1" />
-              </Link>
-            </Button>
-            <Button variant="heroOutline" size="xl" asChild>
-              <Link to="/demo">View Demo</Link>
-            </Button>
-          </div>
-        </div>
-
-        {/* Static Product Mockup with floating UI */}
-        <div
-          className="max-w-5xl mx-auto animate-fade-up"
-          style={{
-            animationDelay: "500ms",
-            transform: `translateY(${offset * 0.08}px)`
-          }}
-        >
+          {/* Visual Column - Static Product Mockup with floating UI */}
+          <div
+            className="order-1 lg:order-2 animate-fade-up lg:animate-none"
+            style={{
+              animationDelay: "200ms",
+              transform: `translateY(${offset * 0.08}px)`
+            }}
+          >
           <div className="relative rounded-2xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden card-lift">
             {/* Window Chrome */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-secondary/30">
@@ -154,6 +156,7 @@ const Hero = () => {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
