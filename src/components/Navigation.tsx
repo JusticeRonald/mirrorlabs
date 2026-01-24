@@ -10,12 +10,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Menu, X, ChevronDown, User, FolderOpen, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { AuthModal } from "@/components/auth";
 
 const Navigation = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const location = useLocation();
-  const { isLoggedIn, user, login, logout } = useAuth();
+  const { isLoggedIn, user, logout, isDemoMode } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -86,6 +88,11 @@ const Navigation = () => {
           <div className="hidden md:flex items-center gap-3">
             {isLoggedIn ? (
               <>
+                {isDemoMode && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
+                    Demo Mode
+                  </span>
+                )}
                 <Button variant="ghost" size="sm" asChild>
                   <Link to="/portfolio">My Projects</Link>
                 </Button>
@@ -121,11 +128,11 @@ const Navigation = () => {
               </>
             ) : (
               <>
-                <Button variant="ghost" size="sm" onClick={login}>
+                <Button variant="ghost" size="sm" onClick={() => setAuthModalOpen(true)}>
                   Log In
                 </Button>
                 <Button variant="hero" size="sm" asChild>
-                  <Link to="/contact">Request Access</Link>
+                  <Link to="/contact">Request a Scan</Link>
                 </Button>
               </>
             )}
@@ -192,14 +199,14 @@ const Navigation = () => {
                       variant="ghost"
                       size="default"
                       onClick={() => {
-                        login();
+                        setAuthModalOpen(true);
                         setMobileMenuOpen(false);
                       }}
                     >
                       Log In
                     </Button>
                     <Button variant="hero" size="default" asChild>
-                      <Link to="/contact" onClick={() => setMobileMenuOpen(false)}>Request Access</Link>
+                      <Link to="/contact" onClick={() => setMobileMenuOpen(false)}>Request a Scan</Link>
                     </Button>
                   </>
                 )}
@@ -208,6 +215,9 @@ const Navigation = () => {
           </div>
         )}
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
     </nav>
   );
 };

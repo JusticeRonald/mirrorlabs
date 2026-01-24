@@ -1,5 +1,8 @@
 export type UserRole = 'owner' | 'editor' | 'viewer';
 
+// Account type for staff vs client distinction
+export type AccountType = 'staff' | 'client' | 'demo';
+
 export interface User {
   id: string;
   name: string;
@@ -7,6 +10,31 @@ export interface User {
   avatar?: string;
   initials: string;
 }
+
+// Account-level permissions (staff vs client)
+export interface AccountPermissions {
+  canUploadScans: boolean;
+  canCreateProjects: boolean;
+  canInviteClients: boolean;
+}
+
+export const ACCOUNT_PERMISSIONS: Record<AccountType, AccountPermissions> = {
+  staff: {
+    canUploadScans: true,
+    canCreateProjects: true,
+    canInviteClients: true,
+  },
+  client: {
+    canUploadScans: false,
+    canCreateProjects: false,
+    canInviteClients: false,
+  },
+  demo: {
+    canUploadScans: false,
+    canCreateProjects: false,
+    canInviteClients: false,
+  },
+};
 
 export interface ProjectMember {
   user: User;
@@ -72,5 +100,6 @@ export const mockUsers: User[] = [
   { id: 'user-10', name: 'Emily Stone', email: 'emily@mirrorlabs.com', initials: 'ES' },
 ];
 
-// Current user (simulated logged-in user)
+// Note: currentUser is now managed by AuthContext
+// This is kept for backward compatibility with mock data
 export const currentUser: User = mockUsers[0];

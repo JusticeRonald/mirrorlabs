@@ -72,15 +72,41 @@ export interface AnnotationReply {
   createdBy: string;
 }
 
+/**
+ * Camera position and orientation for saved views
+ */
+export interface CameraState {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+  fov: number;
+}
+
+/**
+ * A saved camera view (waypoint)
+ */
+export interface SavedView {
+  id: string;
+  scanId: string;
+  name: string;
+  camera: CameraState;
+  thumbnail?: string;
+  sortOrder: number;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface ViewerState {
   activeTool: string | null;
   viewMode: ViewMode;
   showGrid: boolean;
   showMeasurements: boolean;
   showAnnotations: boolean;
+  showSavedViews: boolean;
   selectedObjectId: string | null;
   measurements: Measurement[];
   annotations: Annotation[];
+  savedViews: SavedView[];
+  activeSavedViewId: string | null;
 
   // Splat loading state
   splatLoadingState: SplatLoadingState;
@@ -113,9 +139,12 @@ export const defaultViewerState: ViewerState = {
   showGrid: true,
   showMeasurements: true,
   showAnnotations: true,
+  showSavedViews: true,
   selectedObjectId: null,
   measurements: [],
   annotations: [],
+  savedViews: [],
+  activeSavedViewId: null,
 
   // Splat loading state
   splatLoadingState: 'idle',
@@ -154,6 +183,7 @@ export const viewerTools: ToolDefinition[] = [
   { id: 'wireframe', name: 'Wireframe', icon: 'Box', group: 'view', shortcut: 'W' },
   { id: 'section', name: 'Section', icon: 'Scissors', group: 'view' },
   { id: 'layers', name: 'Layers', icon: 'Layers', group: 'view', shortcut: 'L' },
+  { id: 'savedViews', name: 'Saved Views', icon: 'Camera', group: 'view', shortcut: 'V' },
 
   // Export
   { id: 'download', name: 'Download', icon: 'Download', group: 'export', requiresPermission: 'canExport' },

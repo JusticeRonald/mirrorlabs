@@ -5,6 +5,8 @@ import {
   Measurement,
   Annotation,
   ViewMode,
+  SavedView,
+  CameraState,
   defaultViewerState,
   SplatLoadProgress,
   SplatSceneMetadata,
@@ -24,6 +26,7 @@ interface ViewerContextType {
   toggleGrid: () => void;
   toggleMeasurements: () => void;
   toggleAnnotations: () => void;
+  toggleSavedViews: () => void;
 
   // Measurements
   addMeasurement: (measurement: Omit<Measurement, 'id' | 'createdAt'>) => void;
@@ -35,6 +38,14 @@ interface ViewerContextType {
   removeAnnotation: (id: string) => void;
   addAnnotationReply: (annotationId: string, content: string, createdBy: string) => void;
   clearAnnotations: () => void;
+
+  // Saved Views
+  addSavedView: (view: Omit<SavedView, 'id' | 'createdAt' | 'sortOrder'>) => void;
+  updateSavedView: (id: string, updates: Partial<SavedView>) => void;
+  removeSavedView: (id: string) => void;
+  reorderSavedViews: (viewIds: string[]) => void;
+  setActiveSavedView: (id: string | null) => void;
+  loadSavedViews: (views: SavedView[]) => void;
 
   // Selection
   selectObject: (id: string | null) => void;
@@ -77,6 +88,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
   const toggleAnnotations = useCallback(() => {
     setState(prev => ({ ...prev, showAnnotations: !prev.showAnnotations }));
+  }, []);
+
+  const toggleSavedViews = useCallback(() => {
+    setState(prev => ({ ...prev, showSavedViews: !prev.showSavedViews }));
   }, []);
 
   // Measurement actions
@@ -151,6 +166,62 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({ ...prev, annotations: [] }));
   }, []);
 
+  // Saved View actions
+  const addSavedView = useCallback((view: Omit<SavedView, 'id' | 'createdAt' | 'sortOrder'>) => {
+    const newView: SavedView = {
+      ...view,
+      id: `view-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      sortOrder: 0, // Will be recalculated
+    };
+    setState(prev => {
+      const newViews = [...prev.savedViews, newView];
+      // Recalculate sort orders
+      return {
+        ...prev,
+        savedViews: newViews.map((v, i) => ({ ...v, sortOrder: i })),
+      };
+    });
+  }, []);
+
+  const updateSavedView = useCallback((id: string, updates: Partial<SavedView>) => {
+    setState(prev => ({
+      ...prev,
+      savedViews: prev.savedViews.map(v =>
+        v.id === id ? { ...v, ...updates } : v
+      ),
+    }));
+  }, []);
+
+  const removeSavedView = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      savedViews: prev.savedViews.filter(v => v.id !== id),
+      activeSavedViewId: prev.activeSavedViewId === id ? null : prev.activeSavedViewId,
+    }));
+  }, []);
+
+  const reorderSavedViews = useCallback((viewIds: string[]) => {
+    setState(prev => {
+      const viewMap = new Map(prev.savedViews.map(v => [v.id, v]));
+      const reordered = viewIds
+        .map((id, index) => {
+          const view = viewMap.get(id);
+          return view ? { ...view, sortOrder: index } : null;
+        })
+        .filter((v): v is SavedView => v !== null);
+      return { ...prev, savedViews: reordered };
+    });
+  }, []);
+
+  const setActiveSavedView = useCallback((id: string | null) => {
+    setState(prev => ({ ...prev, activeSavedViewId: id }));
+  }, []);
+
+  const loadSavedViews = useCallback((views: SavedView[]) => {
+    setState(prev => ({ ...prev, savedViews: views }));
+  }, []);
+
   // Selection
   const selectObject = useCallback((id: string | null) => {
     setState(prev => ({ ...prev, selectedObjectId: id }));
@@ -206,6 +277,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     toggleGrid,
     toggleMeasurements,
     toggleAnnotations,
+    toggleSavedViews,
     addMeasurement,
     removeMeasurement,
     clearMeasurements,
@@ -213,6 +285,12 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     removeAnnotation,
     addAnnotationReply,
     clearAnnotations,
+    addSavedView,
+    updateSavedView,
+    removeSavedView,
+    reorderSavedViews,
+    setActiveSavedView,
+    loadSavedViews,
     selectObject,
     setSplatLoading,
     setSplatProgress,
