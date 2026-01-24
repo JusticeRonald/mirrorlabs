@@ -21,6 +21,7 @@ export type MeasurementType = 'distance' | 'area' | 'angle';
 export type MeasurementUnit = 'ft' | 'm' | 'in' | 'cm';
 export type IndustryType = 'construction' | 'real-estate' | 'cultural';
 export type AccountType = 'staff' | 'client';
+export type WorkspaceType = 'personal' | 'business';
 export type ActivityAction =
   | 'project_created'
   | 'project_updated'
@@ -34,11 +35,13 @@ export type ActivityAction =
 export interface Database {
   public: {
     Tables: {
-      organizations: {
+      workspaces: {
         Row: {
           id: string;
           name: string;
           slug: string;
+          type: WorkspaceType;
+          owner_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -46,6 +49,8 @@ export interface Database {
           id?: string;
           name: string;
           slug: string;
+          type?: WorkspaceType;
+          owner_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -53,6 +58,8 @@ export interface Database {
           id?: string;
           name?: string;
           slug?: string;
+          type?: WorkspaceType;
+          owner_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -66,6 +73,7 @@ export interface Database {
           initials: string | null;
           account_type: AccountType;
           is_staff: boolean;
+          primary_workspace_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -77,6 +85,7 @@ export interface Database {
           initials?: string | null;
           account_type?: AccountType;
           is_staff?: boolean;
+          primary_workspace_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -88,28 +97,29 @@ export interface Database {
           initials?: string | null;
           account_type?: AccountType;
           is_staff?: boolean;
+          primary_workspace_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
       };
-      org_members: {
+      workspace_members: {
         Row: {
           id: string;
-          org_id: string;
+          workspace_id: string;
           user_id: string;
           role: UserRole;
           created_at: string;
         };
         Insert: {
           id?: string;
-          org_id: string;
+          workspace_id: string;
           user_id: string;
           role?: UserRole;
           created_at?: string;
         };
         Update: {
           id?: string;
-          org_id?: string;
+          workspace_id?: string;
           user_id?: string;
           role?: UserRole;
           created_at?: string;
@@ -118,7 +128,7 @@ export interface Database {
       projects: {
         Row: {
           id: string;
-          org_id: string | null;
+          workspace_id: string | null;
           name: string;
           description: string | null;
           industry: IndustryType;
@@ -130,7 +140,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          org_id?: string | null;
+          workspace_id?: string | null;
           name: string;
           description?: string | null;
           industry?: IndustryType;
@@ -142,7 +152,7 @@ export interface Database {
         };
         Update: {
           id?: string;
-          org_id?: string | null;
+          workspace_id?: string | null;
           name?: string;
           description?: string | null;
           industry?: IndustryType;
@@ -447,6 +457,7 @@ export interface Database {
       industry_type: IndustryType;
       activity_action: ActivityAction;
       account_type: AccountType;
+      workspace_type: WorkspaceType;
     };
   };
 }
@@ -461,8 +472,12 @@ export type UpdateTables<T extends keyof Database['public']['Tables']> =
 
 // Convenience type aliases
 export type Profile = Tables<'profiles'>;
-export type Organization = Tables<'organizations'>;
+export type Workspace = Tables<'workspaces'>;
+export type WorkspaceMember = Tables<'workspace_members'>;
 export type Project = Tables<'projects'>;
+
+// Legacy alias for backward compatibility
+export type Organization = Workspace;
 export type ProjectMember = Tables<'project_members'>;
 export type Scan = Tables<'scans'>;
 export type Annotation = Tables<'annotations'>;

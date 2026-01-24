@@ -13,6 +13,7 @@ CREATE TYPE annotation_status AS ENUM ('open', 'resolved');
 CREATE TYPE measurement_type AS ENUM ('distance', 'area', 'angle');
 CREATE TYPE measurement_unit AS ENUM ('ft', 'm', 'in', 'cm');
 CREATE TYPE industry_type AS ENUM ('construction', 'real-estate', 'cultural');
+CREATE TYPE workspace_type AS ENUM ('personal', 'business');
 CREATE TYPE activity_action AS ENUM (
   'project_created',
   'project_updated',
@@ -28,11 +29,13 @@ CREATE TYPE activity_action AS ENUM (
 -- TABLES
 -- ============================================================================
 
--- Organizations (companies/teams)
-CREATE TABLE organizations (
+-- Workspaces (companies/teams/personal spaces)
+CREATE TABLE workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
+  type workspace_type DEFAULT 'business',
+  owner_id UUID, -- References profiles, added after profiles table creation
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -44,24 +47,35 @@ CREATE TABLE profiles (
   name TEXT,
   avatar_url TEXT,
   initials TEXT,
+  account_type TEXT DEFAULT 'client',
+  is_staff BOOLEAN DEFAULT FALSE,
+  primary_workspace_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Organization Members (many-to-many)
-CREATE TABLE org_members (
+-- Add foreign key from workspaces to profiles (after profiles table exists)
+ALTER TABLE workspaces ADD CONSTRAINT fk_workspaces_owner
+  FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE SET NULL;
+
+-- Add foreign key from profiles to workspaces (after workspaces table exists)
+ALTER TABLE profiles ADD CONSTRAINT fk_profiles_primary_workspace
+  FOREIGN KEY (primary_workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL;
+
+-- Workspace Members (many-to-many)
+CREATE TABLE workspace_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   role user_role DEFAULT 'viewer',
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(org_id, user_id)
+  UNIQUE(workspace_id, user_id)
 );
 
 -- Projects
 CREATE TABLE projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   description TEXT,
   industry industry_type DEFAULT 'construction',
@@ -180,9 +194,9 @@ CREATE TABLE activity_log (
 -- INDEXES
 -- ============================================================================
 
-CREATE INDEX idx_org_members_org ON org_members(org_id);
-CREATE INDEX idx_org_members_user ON org_members(user_id);
-CREATE INDEX idx_projects_org ON projects(org_id);
+CREATE INDEX idx_workspace_members_workspace ON workspace_members(workspace_id);
+CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
+CREATE INDEX idx_projects_workspace ON projects(workspace_id);
 CREATE INDEX idx_projects_created_by ON projects(created_by);
 CREATE INDEX idx_project_members_project ON project_members(project_id);
 CREATE INDEX idx_project_members_user ON project_members(user_id);
@@ -236,8 +250,8 @@ $$ LANGUAGE plpgsql;
 -- TRIGGERS
 -- ============================================================================
 
-CREATE TRIGGER update_organizations_updated_at
-  BEFORE UPDATE ON organizations
+CREATE TRIGGER update_workspaces_updated_at
+  BEFORE UPDATE ON workspaces
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 CREATE TRIGGER update_profiles_updated_at
@@ -265,9 +279,9 @@ CREATE TRIGGER update_comments_updated_at
 -- ============================================================================
 
 -- Enable RLS on all tables
-ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scans ENABLE ROW LEVEL SECURITY;
@@ -294,19 +308,41 @@ CREATE POLICY "Users can insert their own profile"
   TO authenticated
   WITH CHECK (auth.uid() = id);
 
--- Projects: Users can see projects they're members of or created
+-- Projects: Users can see projects in workspaces they're members of, or projects they created/are members of
 CREATE POLICY "Users can view projects they have access to"
   ON projects FOR SELECT
   TO authenticated
   USING (
-    created_by = auth.uid() OR
-    id IN (SELECT project_id FROM project_members WHERE user_id = auth.uid())
+    created_by = auth.uid()
+    OR id IN (SELECT project_id FROM project_members WHERE user_id = auth.uid())
+    OR workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid())
   );
 
-CREATE POLICY "Users can create projects"
+-- Staff can view all projects
+CREATE POLICY "Staff can view all projects"
+  ON projects FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  );
+
+-- Staff or workspace editors can create projects (Admin-Centric Model)
+CREATE POLICY "Staff or workspace editors can create projects"
   ON projects FOR INSERT
   TO authenticated
-  WITH CHECK (created_by = auth.uid());
+  WITH CHECK (
+    created_by = auth.uid()
+    AND (
+      -- Staff can create projects anywhere
+      EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+      OR
+      -- Workspace editors can create in their workspace
+      workspace_id IN (
+        SELECT workspace_id FROM workspace_members
+        WHERE user_id = auth.uid() AND role IN ('owner', 'editor')
+      )
+    )
+  );
 
 CREATE POLICY "Project owners can update projects"
   ON projects FOR UPDATE
@@ -551,55 +587,157 @@ CREATE POLICY "System can insert activity log"
   TO authenticated
   WITH CHECK (created_by = auth.uid());
 
--- Organizations
-CREATE POLICY "Organizations visible to members"
-  ON organizations FOR SELECT
+-- Workspaces
+CREATE POLICY "Workspaces visible to members"
+  ON workspaces FOR SELECT
   TO authenticated
   USING (
-    id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid())
+    id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid())
+    OR owner_id = auth.uid()
   );
 
-CREATE POLICY "Users can create organizations"
-  ON organizations FOR INSERT
+-- Only staff can create workspaces (Admin-Centric Model)
+CREATE POLICY "Only staff can create workspaces"
+  ON workspaces FOR INSERT
   TO authenticated
-  WITH CHECK (true);
-
-CREATE POLICY "Org owners can update organizations"
-  ON organizations FOR UPDATE
-  TO authenticated
-  USING (
-    id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid() AND role = 'owner')
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
   );
 
--- Org Members
-CREATE POLICY "Org members visible to org members"
-  ON org_members FOR SELECT
+CREATE POLICY "Workspace owners can update workspaces"
+  ON workspaces FOR UPDATE
   TO authenticated
   USING (
-    org_id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid())
+    id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid() AND role = 'owner')
+    OR owner_id = auth.uid()
   );
 
-CREATE POLICY "Org owners can manage org members"
-  ON org_members FOR ALL
+-- Staff can see all workspaces
+CREATE POLICY "Staff can see all workspaces"
+  ON workspaces FOR SELECT
   TO authenticated
   USING (
-    org_id IN (SELECT org_id FROM org_members WHERE user_id = auth.uid() AND role = 'owner')
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  );
+
+-- Staff can manage all workspaces
+CREATE POLICY "Staff can manage all workspaces"
+  ON workspaces FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  );
+
+-- Workspace Members
+-- Note: These policies avoid self-referential queries to prevent infinite recursion
+
+-- Helper function to check workspace ownership (SECURITY DEFINER avoids RLS recursion)
+CREATE OR REPLACE FUNCTION check_workspace_ownership(check_workspace_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM workspace_members
+    WHERE workspace_id = check_workspace_id
+    AND user_id = auth.uid()
+    AND role = 'owner'
+  );
+$$;
+
+-- Users can see their own membership records (direct check, no subquery)
+CREATE POLICY "Users can see own memberships"
+  ON workspace_members FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
+-- Staff can see ALL membership records (checks profiles, not workspace_members)
+CREATE POLICY "Staff can see all memberships"
+  ON workspace_members FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  );
+
+-- Workspace owners can insert members
+CREATE POLICY "Workspace owners can insert members"
+  ON workspace_members FOR INSERT
+  TO authenticated
+  WITH CHECK (check_workspace_ownership(workspace_id));
+
+-- Workspace owners can update members
+CREATE POLICY "Workspace owners can update members"
+  ON workspace_members FOR UPDATE
+  TO authenticated
+  USING (check_workspace_ownership(workspace_id))
+  WITH CHECK (check_workspace_ownership(workspace_id));
+
+-- Workspace owners can delete members
+CREATE POLICY "Workspace owners can delete members"
+  ON workspace_members FOR DELETE
+  TO authenticated
+  USING (check_workspace_ownership(workspace_id));
+
+-- Staff can manage all workspace memberships
+CREATE POLICY "Staff can manage all memberships"
+  ON workspace_members FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_staff = true)
   );
 
 -- ============================================================================
--- AUTO-CREATE PROFILE ON SIGNUP
+-- AUTO-CREATE PROFILE ON SIGNUP (Admin-Centric Model)
+-- Staff: Gets a personal workspace for internal work
+-- Clients: Profile only - admin adds them to workspaces
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  personal_ws_id UUID;
+  user_name TEXT;
+  user_is_staff BOOLEAN;
 BEGIN
-  INSERT INTO public.profiles (id, email, name, initials)
+  -- Get user metadata
+  user_name := COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1));
+  user_is_staff := NEW.email LIKE '%@mirrorlabs3d.com';
+
+  -- Create profile first (no workspace initially for clients)
+  INSERT INTO public.profiles (id, email, name, initials, account_type, is_staff, primary_workspace_id)
   VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-    generate_initials(COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)))
+    user_name,
+    generate_initials(user_name),
+    CASE WHEN user_is_staff THEN 'staff' ELSE 'client' END,
+    user_is_staff,
+    NULL  -- No workspace initially
   );
+
+  -- Only staff gets a personal workspace
+  IF user_is_staff THEN
+    INSERT INTO workspaces (name, slug, type, owner_id)
+    VALUES (
+      user_name || '''s Workspace',
+      'ws-' || replace(NEW.id::text, '-', ''),
+      'personal',
+      NEW.id
+    ) RETURNING id INTO personal_ws_id;
+
+    INSERT INTO workspace_members (workspace_id, user_id, role)
+    VALUES (personal_ws_id, NEW.id, 'owner');
+
+    UPDATE profiles SET primary_workspace_id = personal_ws_id WHERE id = NEW.id;
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

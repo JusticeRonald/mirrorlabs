@@ -38,19 +38,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Demo user for offline/demo mode
 const demoUser: User = {
   id: 'demo-user',
-  name: 'Demo User',
-  email: 'demo@mirrorlabs.com',
-  initials: 'DU',
+  name: 'Demo Client',
+  email: 'demo@example.com',
+  initials: 'DC',
 };
 
 const demoProfile: Profile = {
   id: 'demo-user',
-  email: 'demo@mirrorlabs.com',
-  name: 'Demo User',
+  email: 'demo@example.com',
+  name: 'Demo Client',
   avatar_url: null,
-  initials: 'DU',
+  initials: 'DC',
   account_type: 'client',
   is_staff: false,
+  primary_workspace_id: 'demo',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -111,12 +112,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        const userProfile = await fetchProfile(session.user.id);
-        setProfile(userProfile);
+      try {
+        setSession(session);
+        if (session?.user) {
+          const userProfile = await fetchProfile(session.user.id);
+          setProfile(userProfile);
+        }
+      } catch (error) {
+        console.error('Error during auth initialization:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
     // Listen for auth changes
@@ -160,7 +166,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     });
 
     // Note: Profile is created automatically by database trigger (handle_new_user)
-    // The trigger uses the name from raw_user_meta_data and auto-detects staff from email domain
+    // Admin-Centric Model:
+    // - Staff (@mirrorlabs3d.com): Gets a personal workspace
+    // - Clients: Profile only - admin adds them to workspaces
 
     return { error };
   };
@@ -173,10 +181,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
 
     if (isSupabaseConfigured()) {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      if (error) {
+        console.error('Logout error:', error.message);
+      }
+      // Always clear local state - don't rely solely on onAuthStateChange
+      // The listener will also fire, but double-setting to null is safe
+      setSession(null);
+      setProfile(null);
+    } else {
+      // Not configured - just clear local state
+      setSession(null);
+      setProfile(null);
     }
-    setSession(null);
-    setProfile(null);
   };
 
   const loginAsDemo = (): void => {
@@ -216,10 +233,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Staff detection: check email domain or profile is_staff flag
   const isStaff = useMemo(() => {
-    if (isDemoMode) return false;
-    if (profile?.is_staff) return true;
+    // Check profile is_staff flag first (works for both demo and real users)
+    if (profile?.is_staff) {
+      console.log('[Auth] Profile is_staff flag = true');
+      return true;
+    }
+    // Demo mode without is_staff flag defaults to client
+    if (isDemoMode) {
+      console.log('[Auth] Demo mode without is_staff flag - isStaff = false');
+      return false;
+    }
+    // Check email domain for real users
     const email = user?.email || '';
-    return email.endsWith('@mirrorlabs3d.com');
+    const emailIsStaff = email.endsWith('@mirrorlabs3d.com');
+    console.log(`[Auth] Email "${email}" isStaff = ${emailIsStaff}`);
+    return emailIsStaff;
   }, [isDemoMode, profile?.is_staff, user?.email]);
 
   // Account type: demo, staff, or client

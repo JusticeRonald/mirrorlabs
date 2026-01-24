@@ -61,6 +61,15 @@ src/
 - `src/contexts/ViewerContext.tsx` - State management for viewer (tools, loading, saved views)
 - `src/hooks/useProjects.ts` - Projects hook with Supabase/mock data abstraction
 
+### Data Services Layer
+All services in `src/lib/supabase/services/` with graceful Supabase fallback:
+
+- **workspaces.ts**: CRUD for workspaces + member management (replaces organizations.ts)
+- **projects.ts**: CRUD + member management
+- **scans.ts**: CRUD with status tracking (uploading → processing → ready)
+- **annotations.ts**: Annotations, replies, measurements, camera waypoints, comments
+- **storage.ts**: File upload with progress, validation, signed URLs
+
 ## Platform Roadmap
 
 ### Backend Architecture: Supabase
@@ -70,15 +79,43 @@ Selected as unified backend for rapid development with path to scale:
 - **Storage**: S3-compatible, direct browser upload with RLS
 - **Realtime**: Built on Postgres LISTEN/NOTIFY for collaboration
 
+### Admin-Centric Organizational Model
+The platform uses an admin-centric model where Mirror Labs staff manages workspace/project creation:
+
+**Model Summary:**
+- **Staff** creates and manages all business workspaces
+- **Staff** assigns clients as members to workspaces
+- **Clients** view/annotate projects in assigned workspaces only
+- **Clients** CANNOT create workspaces or projects
+
+**Client Workspace Policy:**
+- Clients sign up → profile created → NO workspace
+- Staff adds client to business workspace → client can access projects
+- Portfolio page shows projects from all assigned workspaces
+
+**Staff Workspace Policy:**
+- Staff sign up → personal workspace created (internal sandbox)
+- Staff can create business workspaces for clients in Admin UI
+- Staff can view all projects across all workspaces
+
+**Terminology Guide:**
+| Concept | UI Term | Database | Notes |
+|---------|---------|----------|-------|
+| Umbrella container | **Workspace** | `workspaces` | Personal or Business type |
+| Workspace user link | **Member** | `workspace_members` | Person in a workspace |
+| Project user link | **Member** | `project_members` | Person in a project |
+| Individual account | **Person/People** | `profiles` | Avoid "user" in UI |
+| Mirror Labs employees | **Staff** | `is_staff` flag | Internal team |
+
 ### Database Schema
 ```sql
 -- Core Entities
-organizations (id, name, slug, created_at)
-profiles (id, email, name, avatar_url, initials)
-org_members (org_id, user_id, role)
+workspaces (id, name, slug, type, owner_id, created_at)  -- type: 'personal' | 'business'
+profiles (id, email, name, avatar_url, initials, primary_workspace_id)
+workspace_members (workspace_id, user_id, role)
 
 -- Projects & Scans
-projects (id, org_id, name, description, industry, thumbnail_url, is_archived)
+projects (id, workspace_id, name, description, industry, thumbnail_url, is_archived)
 project_members (project_id, user_id, role)
 scans (id, project_id, name, file_url, file_type, file_size, splat_count, status)
 
@@ -97,11 +134,11 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 | Priority | Feature | Status |
 |----------|---------|--------|
 | **P0** | Supabase Auth | ✅ Implemented |
-| **P0** | Database/Persistence | ✅ Types & Services Ready |
-| **P0** | File Upload | ✅ Component Ready |
+| **P0** | Database/Persistence | ✅ Implemented |
+| **P0** | File Upload | ✅ Implemented |
 | **P1** | Functional Measurements | Pending |
-| **P1** | Annotations/Comments | Pending |
-| **P1** | Camera Waypoints (Saved Views) | ✅ Types Ready |
+| **P1** | Annotations/Comments | ✅ Service Layer Ready |
+| **P1** | Camera Waypoints (Saved Views) | ✅ Service Layer Ready |
 | **P2** | SOG Compression | Future |
 | **P2** | Real-time Collaboration | Future |
 
@@ -139,9 +176,9 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 - **Authentication System**: Full email/password auth with Supabase
   - AuthModal component with Login/Signup tab switching
   - LoginForm with email/password validation
-  - SignupForm with password confirmation
+  - SignupForm with name/email/password (simplified, no company field)
   - DemoAccessCard for demo mode access
-  - Profiles table trigger for automatic user creation on signup
+  - Profiles trigger creates personal workspace for staff only (Admin-Centric Model)
   - Seamless demo mode fallback when Supabase not configured
 
 - **Gaussian Splat Viewer**: Full 3D viewer with Spark renderer
@@ -240,17 +277,112 @@ The demo page loads from this directory.
 - Profiles table with trigger for automatic user creation on signup
 - SQL migration files in `supabase/migrations/`
 
-### 3. Configure Storage (Pending)
-1. Create `scans` bucket
-2. Set public access policy or use signed URLs
-3. Configure RLS for upload permissions
+### 3. Configure Storage ✅
+- Storage service implemented in `src/lib/supabase/services/storage.ts`
+- File upload with XHR progress tracking
+- File validation with size limits:
+  - PLY: 2GB max
+  - SPZ/SPLAT/KSPLAT/PCSOGS: 500MB each
+- Thumbnail upload support
+- Signed URL generation for private files
+
+**Bucket Setup (if not done):**
+1. Create `scans` bucket in Supabase Storage
+2. Configure RLS policies for authenticated uploads
 
 ### 4. Enable Auth ✅
 - Email/password provider configured
 - OAuth providers: pending
 - Redirect URLs: configured for localhost
 
-## Known Issues
+### Account Types & Permissions (Admin-Centric Model)
+Three account types with different permission levels:
+- **Staff**: Full access - upload scans, create projects, manage workspaces
+  - Detected via `@mirrorlabs3d.com` email domain OR `is_staff` profile flag
+  - Can see all workspaces in Admin → Workspaces
+  - Gets personal workspace on signup (internal sandbox)
+- **Client**: View/annotate access to assigned workspaces only
+  - NO workspace created on signup (profile only)
+  - Staff adds client to workspaces via Admin UI
+  - Cannot create projects or upload scans
+- **Demo**: Full demo mode features without real data persistence
 
-### Auth Modal Content Shift
-When switching between Login and Signup tabs in the AuthModal, the modal content shifts slightly due to different form heights. This is a cosmetic issue deferred for future polish.
+**Implementation**: `src/contexts/AuthContext.tsx`
+- `handle_new_user` trigger creates profile for all users
+- Only staff gets personal workspace on signup
+- Clients wait to be added to workspaces by staff
+- Generates initials from name via `generate_initials` function
+- Session persistence with auth state subscription
+
+**RLS Enforcement** (Database Level):
+- `workspaces` INSERT: Staff only
+- `projects` INSERT: Staff or workspace editors
+- `projects` SELECT: Workspace members or staff
+
+## Development Status & Next Steps
+
+### Current State (January 2026)
+- ✅ Supabase Auth with email/password + demo mode fallback
+- ✅ Admin-Centric organizational model (staff manages workspaces/projects)
+- ✅ 3D Gaussian Splat Viewer with Spark renderer
+- ✅ File upload with validation and progress tracking
+- ✅ Data services layer for all entities
+- ✅ Account type permissions (Staff/Client/Demo) with RLS enforcement
+- ✅ Admin UI: Workspaces (business) + People pages
+
+### Next Priority (P1 Features)
+- [ ] Functional measurement tool (distance, area, angle)
+- [ ] Annotation system with threading and replies
+- [ ] Camera waypoints with smooth transitions
+- [ ] Basic sharing (public links)
+
+### Branch Status
+Development on `master` branch. All recent Supabase auth and viewer work has been merged.
+
+### To Resume Development
+1. Run `npm run dev` to start dev server
+2. Check this file's "Next Priority" section for pending work
+3. Use demo mode (no Supabase config needed) for local development
+
+## Future Evolution: Self-Service Client Model
+
+The Admin-Centric model is designed to evolve toward client self-service when needed:
+
+| Layer | Current Behavior | Future-Ready? |
+|-------|------------------|---------------|
+| **Database RLS** | Staff OR workspace editors can create projects | ✅ Already supports role-based access |
+| **Frontend Permissions** | Only staff accounts can create | 🔧 Single file change needed |
+| **Workspace Roles** | owner / editor / viewer roles exist | ✅ Ready for client promotion |
+
+### Evolution Phases
+
+| Phase | Model | Client Capabilities | When to Use |
+|-------|-------|---------------------|-------------|
+| **Phase 1** (Current) | Admin-Centric | View/annotate only | Early stage, onboarding new clients |
+| **Phase 2** | Trusted Client | Editors can create projects/upload scans | Established clients, reduce admin workload |
+| **Phase 3** | Self-Service | Clients create own workspaces, invite team | Scale, SaaS model, billing per workspace |
+
+### Migration Path to Phase 2 (Trusted Clients)
+
+When ready to enable trusted client self-service:
+
+1. **Update `ACCOUNT_PERMISSIONS`** in `src/types/user.ts`:
+   - Make permissions role-aware (check workspace role, not just account type)
+
+2. **Update UI components** to pass workspace context to permission checks
+
+3. **No database changes needed** - RLS already supports role-based project creation:
+   ```sql
+   -- Workspace editors can create in their workspace
+   workspace_id IN (
+     SELECT workspace_id FROM workspace_members
+     WHERE user_id = auth.uid() AND role IN ('owner', 'editor')
+   )
+   ```
+
+### Design Decisions to Preserve
+
+For future compatibility, maintain these patterns:
+- **Workspace as container**: All projects belong to a workspace
+- **Role-based access**: Use `workspace_members.role`, not `account_type`, for fine-grained permissions
+- **Separation of concerns**: RLS for security, frontend for UX (don't rely solely on frontend)

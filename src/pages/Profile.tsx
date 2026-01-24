@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   ArrowLeft,
   User,
@@ -20,10 +20,11 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProjectsNavigation from '@/components/ProjectsNavigation';
-import { currentUser } from '@/types/user';
+import { useAuth } from '@/contexts/AuthContext';
 import { mockProjects, getOwnedProjects, getSharedProjects } from '@/data/mockProjects';
 
 const Profile = () => {
+  const { user, isLoading } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
 
   // Stats
@@ -31,6 +32,18 @@ const Profile = () => {
   const totalScans = mockProjects.reduce((acc, p) => acc + p.scans.length, 0);
   const ownedCount = getOwnedProjects().length;
   const sharedCount = getSharedProjects().length;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -53,7 +66,7 @@ const Profile = () => {
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center">
                 <span className="text-3xl font-bold text-primary">
-                  {currentUser.initials}
+                  {user.initials}
                 </span>
               </div>
               <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center hover:bg-muted transition-colors">
@@ -62,8 +75,8 @@ const Profile = () => {
             </div>
 
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-foreground">{currentUser.name}</h1>
-              <p className="text-muted-foreground">{currentUser.email}</p>
+              <h1 className="text-2xl font-bold text-foreground">{user.name}</h1>
+              <p className="text-muted-foreground">{user.email}</p>
             </div>
 
             <Button variant="outline" onClick={() => setIsEditing(!isEditing)}>
@@ -103,7 +116,7 @@ const Profile = () => {
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         id="name"
-                        defaultValue={currentUser.name}
+                        defaultValue={user.name}
                         disabled={!isEditing}
                         className="pl-10"
                       />
@@ -117,7 +130,7 @@ const Profile = () => {
                       <Input
                         id="email"
                         type="email"
-                        defaultValue={currentUser.email}
+                        defaultValue={user.email}
                         disabled={!isEditing}
                         className="pl-10"
                       />

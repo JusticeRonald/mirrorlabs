@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dialog,
   DialogContent,
@@ -6,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DemoAccessCard } from './DemoAccessCard';
 import { LoginForm } from './LoginForm';
 import { SignupForm } from './SignupForm';
@@ -32,7 +33,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] top-[15%] translate-y-0">
         <DialogHeader>
           <DialogTitle>Welcome to Mirror Labs</DialogTitle>
           <DialogDescription>
@@ -62,12 +63,24 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               <TabsTrigger value="login">Log In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
-            <TabsContent value="login" className="mt-4 min-h-[280px]">
-              <LoginForm onSuccess={handleSuccess} />
-            </TabsContent>
-            <TabsContent value="signup" className="mt-4 min-h-[280px]">
-              <SignupForm onSuccess={handleSuccess} />
-            </TabsContent>
+            <motion.div className="mt-4 overflow-hidden" layout transition={{ duration: 0.2, ease: "easeInOut" }}>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.05 }}
+                  layout
+                >
+                  {activeTab === 'login' ? (
+                    <LoginForm onSuccess={handleSuccess} />
+                  ) : (
+                    <SignupForm onSuccess={handleSuccess} />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
           </Tabs>
         </div>
       </DialogContent>

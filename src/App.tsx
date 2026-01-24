@@ -17,6 +17,15 @@ import Portfolio from "./pages/Portfolio";
 import Profile from "./pages/Profile";
 import Pricing from "./pages/Pricing";
 import NotFound from "./pages/NotFound";
+import { AdminGuard } from "@/components/admin";
+import {
+  AdminDashboard,
+  AdminWorkspaces,
+  AdminWorkspaceDetail,
+  AdminProjects,
+  AdminUsers,
+  AdminDemo,
+} from "./pages/admin";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +49,13 @@ const App = () => (
             <Route path="/viewer/:projectId/:scanId" element={<ViewerPage />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/profile" element={<Profile />} />
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+            <Route path="/admin/workspaces" element={<AdminGuard><AdminWorkspaces /></AdminGuard>} />
+            <Route path="/admin/workspaces/:id" element={<AdminGuard><AdminWorkspaceDetail /></AdminGuard>} />
+            <Route path="/admin/projects" element={<AdminGuard><AdminProjects /></AdminGuard>} />
+            <Route path="/admin/people" element={<AdminGuard><AdminUsers /></AdminGuard>} />
+            <Route path="/admin/demo" element={<AdminGuard><AdminDemo /></AdminGuard>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

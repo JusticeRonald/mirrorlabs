@@ -10,7 +10,7 @@ interface SignupFormProps {
 }
 
 export function SignupForm({ onSuccess }: SignupFormProps) {
-  const { signup } = useAuth();
+  const { signup, login } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,14 +28,23 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
 
     setIsLoading(true);
 
-    const { error: authError } = await signup(email, password, name);
+    const { error: signupError } = await signup(email, password, name);
 
-    if (authError) {
-      setError(authError.message);
+    if (signupError) {
+      setError(signupError.message);
       setIsLoading(false);
-    } else {
-      onSuccess();
+      return;
     }
+
+    // Auto-login after successful signup
+    const { error: loginError } = await login(email, password);
+    if (loginError) {
+      setError('Account created but login failed. Please try logging in.');
+      setIsLoading(false);
+      return;
+    }
+
+    onSuccess();
   };
 
   return (
@@ -77,7 +86,6 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
           minLength={6}
         />
       </div>
-
       {error && (
         <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
           {error}
