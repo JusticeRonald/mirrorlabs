@@ -17,7 +17,15 @@ const Navigation = () => {
   const [scrolled, setScrolled] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const location = useLocation();
-  const { isLoggedIn, user, logout, isDemoMode } = useAuth();
+  const { isLoggedIn, user, logout, isDemoMode, isStaff } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      window.location.href = '/';  // Force full navigation to clear state
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -94,7 +102,9 @@ const Navigation = () => {
                   </span>
                 )}
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to="/portfolio">My Projects</Link>
+                  <Link to={isStaff ? "/admin" : "/portfolio"}>
+                    {isStaff ? "Dashboard" : "My Projects"}
+                  </Link>
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -112,14 +122,23 @@ const Navigation = () => {
                         Profile
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/portfolio" className="flex items-center gap-2 cursor-pointer">
-                        <FolderOpen className="w-4 h-4" />
-                        Portfolio
-                      </Link>
-                    </DropdownMenuItem>
+                    {/* Only show Portfolio link for non-staff users */}
+                    {!isStaff && (
+                      <DropdownMenuItem asChild>
+                        <Link to="/portfolio" className="flex items-center gap-2 cursor-pointer">
+                          <FolderOpen className="w-4 h-4" />
+                          Portfolio
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={logout} className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        handleLogout();
+                      }}
+                      className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+                    >
                       <LogOut className="w-4 h-4" />
                       Log Out
                     </DropdownMenuItem>
@@ -168,11 +187,11 @@ const Navigation = () => {
                 {isLoggedIn ? (
                   <>
                     <Link
-                      to="/portfolio"
+                      to={isStaff ? "/admin" : "/portfolio"}
                       className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setMobileMenuOpen(false)}
                     >
-                      My Projects
+                      {isStaff ? "Dashboard" : "My Projects"}
                     </Link>
                     <Link
                       to="/profile"
@@ -185,8 +204,8 @@ const Navigation = () => {
                       variant="outline"
                       size="default"
                       onClick={() => {
-                        logout();
                         setMobileMenuOpen(false);
+                        handleLogout();
                       }}
                       className="mt-2"
                     >

@@ -21,13 +21,18 @@ interface ProjectsNavigationProps {
 const ProjectsNavigation = ({ currentFilter = 'all', onFilterChange }: ProjectsNavigationProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isStaff } = useAuth();
 
-  const navButtons = [
-    { label: "Projects", filter: 'all' as NavFilter },
-    { label: "Shared with me", filter: 'shared' as NavFilter },
-    { label: "Recent", filter: 'recent' as NavFilter },
-  ];
+  const navButtons = isStaff
+    ? [
+        { label: "All Projects", filter: 'all' as NavFilter },
+        { label: "Recent", filter: 'recent' as NavFilter },
+      ]
+    : [
+        { label: "Projects", filter: 'all' as NavFilter },
+        { label: "Shared with me", filter: 'shared' as NavFilter },
+        { label: "Recent", filter: 'recent' as NavFilter },
+      ];
 
   const handleFilterClick = (filter: NavFilter) => {
     if (onFilterChange) {
@@ -36,8 +41,8 @@ const ProjectsNavigation = ({ currentFilter = 'all', onFilterChange }: ProjectsN
     setMobileMenuOpen(false);
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 

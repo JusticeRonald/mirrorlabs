@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import RoleBadge from '@/components/ui/role-badge';
 import ProjectsNavigation, { NavFilter } from '@/components/ProjectsNavigation';
+import WorkspaceSwitcher from '@/components/WorkspaceSwitcher';
+import CreateProjectModal from '@/components/CreateProjectModal';
 import {
   mockProjects,
   getActiveProjects,
@@ -32,6 +34,8 @@ import {
   getSharedProjects
 } from '@/data/mockProjects';
 import { currentUser } from '@/types/user';
+import { useAuth } from '@/contexts/AuthContext';
+import { Building2 } from 'lucide-react';
 
 type ViewMode = 'grid' | 'list';
 type FilterMode = 'all' | 'owned' | 'shared';
@@ -41,6 +45,9 @@ const Portfolio = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const { isStaff, user, permissions } = useAuth();
 
   // Get nav filter from URL params
   const urlFilter = (searchParams.get('filter') as NavFilter) || 'all';
@@ -116,14 +123,14 @@ const Portfolio = () => {
             {/* Avatar */}
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center">
               <span className="text-2xl font-bold text-primary">
-                {currentUser.initials}
+                {user?.initials || currentUser.initials}
               </span>
             </div>
 
             {/* Info */}
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-foreground">{currentUser.name}</h1>
-              <p className="text-muted-foreground">{currentUser.email}</p>
+              <h1 className="text-2xl font-bold text-foreground">{user?.name || currentUser.name}</h1>
+              <p className="text-muted-foreground">{user?.email || currentUser.email}</p>
 
               {/* Stats */}
               <div className="flex flex-wrap gap-6 mt-4">
@@ -150,12 +157,18 @@ const Portfolio = () => {
 
             {/* Actions */}
             <div className="flex gap-3">
-              <Button asChild>
-                <Link to="/projects">
+              {isStaff && (
+                <WorkspaceSwitcher
+                  value={selectedClientId}
+                  onChange={setSelectedClientId}
+                />
+              )}
+              {(isStaff || permissions.canCreateProjects) && (
+                <Button onClick={() => setIsCreateModalOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   New Project
-                </Link>
-              </Button>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -240,14 +253,31 @@ const Portfolio = () => {
             <TabsContent value="active">
               {filteredActiveProjects.length === 0 ? (
                 <div className="text-center py-12">
-                  <FolderOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No active projects</h3>
-                  <p className="text-muted-foreground mb-4">
-                    {searchQuery ? 'No projects match your search.' : 'Create your first project to get started.'}
-                  </p>
-                  <Button asChild>
-                    <Link to="/projects">Create Project</Link>
-                  </Button>
+                  {!isStaff && !permissions.canCreateProjects ? (
+                    // Client empty state - waiting for admin to add them to a workspace
+                    <>
+                      <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No projects yet</h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">
+                        {searchQuery
+                          ? 'No projects match your search.'
+                          : 'Your administrator will add you to a workspace where you can view and collaborate on projects.'}
+                      </p>
+                    </>
+                  ) : (
+                    // Staff/creator empty state
+                    <>
+                      <FolderOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No active projects</h3>
+                      <p className="text-muted-foreground mb-4">
+                        {searchQuery ? 'No projects match your search.' : 'Create your first project to get started.'}
+                      </p>
+                      <Button onClick={() => setIsCreateModalOpen(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Project
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <ProjectGrid projects={filteredActiveProjects} viewMode={viewMode} />
@@ -271,6 +301,13 @@ const Portfolio = () => {
           </Tabs>
         </div>
       </main>
+
+      {/* Create Project Modal */}
+      <CreateProjectModal
+        open={isCreateModalOpen}
+        onOpenChange={setIsCreateModalOpen}
+        defaultOrgId={selectedClientId || undefined}
+      />
     </div>
   );
 };
