@@ -1,9 +1,11 @@
 import { useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
-import type { SplatLoadProgress, SplatSceneMetadata } from '@/types/viewer';
+import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
+import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
 interface Viewer3DProps {
@@ -21,6 +23,16 @@ interface Viewer3DProps {
   onSplatLoadProgress?: (progress: SplatLoadProgress) => void;
   onSplatLoadComplete?: (metadata: SplatSceneMetadata) => void;
   onSplatLoadError?: (error: Error) => void;
+  /** Initial orientation to apply when splat loads (defaults to DEFAULT_SPLAT_ORIENTATION) */
+  initialOrientation?: SplatOrientation;
+  /** Initial full transform to apply when splat loads (takes precedence over initialOrientation) */
+  initialTransform?: SplatTransform;
+  /** Transform gizmo mode (null = hidden) */
+  transformMode?: TransformMode | null;
+  /** Callback when transform changes via gizmo interaction */
+  onTransformChange?: (transform: SplatTransform) => void;
+  /** Callback to expose the resetView function to parent */
+  onResetView?: (resetFn: () => void) => void;
 }
 
 const Viewer3D = ({
@@ -38,23 +50,36 @@ const Viewer3D = ({
   onSplatLoadProgress,
   onSplatLoadComplete,
   onSplatLoadError,
+  initialOrientation,
+  initialTransform,
+  transformMode = null,
+  onTransformChange,
+  onResetView,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const transformControlsRef = useRef<TransformControls | null>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const isSplatLoadingRef = useRef<boolean>(false);
+  const rotationFeedbackRef = useRef<RotationGizmoFeedback | null>(null);
+  // Store removed gizmo elements (E/XYZE circles) to restore when leaving rotate mode
+  const removedGizmoElementsRef = useRef<{ parent: THREE.Object3D; child: THREE.Object3D }[]>([]);
 
-  // Store callbacks in refs to avoid effect re-runs when parent re-renders
+  // Store callbacks and values in refs to avoid effect re-runs when parent re-renders
   const onSplatLoadStartRef = useRef(onSplatLoadStart);
   const onSplatLoadProgressRef = useRef(onSplatLoadProgress);
   const onSplatLoadCompleteRef = useRef(onSplatLoadComplete);
   const onSplatLoadErrorRef = useRef(onSplatLoadError);
+  const initialOrientationRef = useRef(initialOrientation);
+  const initialTransformRef = useRef(initialTransform);
+  const onTransformChangeRef = useRef(onTransformChange);
+  const onResetViewRef = useRef(onResetView);
 
   // Keep callback refs updated
   useEffect(() => {
@@ -62,6 +87,10 @@ const Viewer3D = ({
     onSplatLoadProgressRef.current = onSplatLoadProgress;
     onSplatLoadCompleteRef.current = onSplatLoadComplete;
     onSplatLoadErrorRef.current = onSplatLoadError;
+    initialOrientationRef.current = initialOrientation;
+    initialTransformRef.current = initialTransform;
+    onTransformChangeRef.current = onTransformChange;
+    onResetViewRef.current = onResetView;
   });
 
   // Handle point selection via raycasting
@@ -173,6 +202,10 @@ const Viewer3D = ({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
+    // Create rotation feedback for Godot-style gizmo visualization
+    const rotationFeedback = new RotationGizmoFeedback(scene);
+    rotationFeedbackRef.current = rotationFeedback;
+
     // Create SceneManager
     const sceneManager = new SceneManager(scene);
     sceneManagerRef.current = sceneManager;
@@ -209,6 +242,73 @@ const Viewer3D = ({
     controls.maxDistance = 500;
     controls.enableZoom = enableZoom;
     controlsRef.current = controls;
+
+    // Transform Controls (for gizmo manipulation)
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.setSize(0.75); // Slightly smaller gizmo for less visual clutter
+    scene.add(transformControls.getHelper());
+    transformControlsRef.current = transformControls;
+
+    // Disable OrbitControls while dragging the gizmo
+    transformControls.addEventListener('dragging-changed', (event: { value: boolean }) => {
+      controls.enabled = !event.value;
+
+      // Handle rotation gizmo feedback (Godot-style arc + label)
+      const activeAxis = event.value ? (transformControls.axis as TransformAxis) : null;
+      if (event.value && transformControls.mode === 'rotate' && activeAxis) {
+        // Start rotation feedback
+        const splatMesh = sceneManagerRef.current?.getSplatMesh();
+        if (splatMesh) {
+          rotationFeedbackRef.current?.startRotation(
+            activeAxis,
+            { x: splatMesh.rotation.x, y: splatMesh.rotation.y, z: splatMesh.rotation.z },
+            splatMesh.position.clone(),
+            0.75  // Match transformControls.setSize(0.75)
+          );
+        }
+      } else {
+        // End rotation feedback
+        rotationFeedbackRef.current?.endRotation();
+      }
+    });
+
+    // Emit transform changes when gizmo is manipulated
+    transformControls.addEventListener('objectChange', () => {
+      const sceneManager = sceneManagerRef.current;
+      if (sceneManager) {
+        const transform = sceneManager.getSplatTransform();
+        if (transform) {
+          // Notify parent of transform change
+          onTransformChangeRef.current?.(transform);
+
+          // Update rotation feedback if active
+          if (transformControls.mode === 'rotate') {
+            rotationFeedbackRef.current?.updateRotation(transform.rotation);
+          }
+        }
+      }
+    });
+
+    // Shift key snapping for precise transforms (Unreal Engine style)
+    let isShiftPressed = false;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift' && !isShiftPressed) {
+        isShiftPressed = true;
+        transformControls.setTranslationSnap(0.1);      // 10cm increments
+        transformControls.setRotationSnap(Math.PI / 18); // 10° increments
+        transformControls.setScaleSnap(0.1);             // 10% increments
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        isShiftPressed = false;
+        transformControls.setTranslationSnap(null);
+        transformControls.setRotationSnap(null);
+        transformControls.setScaleSnap(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     // Lights (for non-splat content)
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -310,13 +410,19 @@ const Viewer3D = ({
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       renderer.domElement.removeEventListener('click', handleClick);
       cancelAnimationFrame(animationFrameId);
       controls.dispose();
+      transformControls.dispose();
+      rotationFeedback.dispose();
       renderer.dispose();
       sceneManager.dispose();
       // Reset loading flag to prevent stuck state if component unmounts during load
       isSplatLoadingRef.current = false;
+      rotationFeedbackRef.current = null;
+      transformControlsRef.current = null;
       if (containerRef.current && renderer.domElement) {
         containerRef.current.removeChild(renderer.domElement);
       }
@@ -360,16 +466,28 @@ const Viewer3D = ({
     const splatRenderer = createSparkRenderer(renderer, scene);
     sceneManager.setSplatRenderer(splatRenderer);
 
-    // Load the splat
-    sceneManager.loadSplat(splatUrl, (progress) => {
-      onSplatLoadProgressRef.current?.(progress);
-    })
+    // Load the splat with initial transform (or orientation for backward compatibility)
+    sceneManager.loadSplat(
+      splatUrl,
+      (progress) => {
+        onSplatLoadProgressRef.current?.(progress);
+      },
+      initialOrientationRef.current,
+      initialTransformRef.current
+    )
       .then((metadata) => {
         isSplatLoadingRef.current = false;
 
         // Fit camera to splat bounds
         if (metadata.boundingBox) {
           fitCameraToBounds(metadata.boundingBox);
+        }
+
+        // Attach TransformControls to the splat mesh
+        const transformControls = transformControlsRef.current;
+        const splatMesh = sceneManager.getSplatMesh();
+        if (transformControls && splatMesh) {
+          transformControls.attach(splatMesh);
         }
 
         onSplatLoadCompleteRef.current?.({
@@ -382,6 +500,61 @@ const Viewer3D = ({
         onSplatLoadErrorRef.current?.(error instanceof Error ? error : new Error(String(error)));
       });
   }, [splatUrl, fitCameraToBounds]);
+
+  // Update transform controls mode and visibility
+  useEffect(() => {
+    const transformControls = transformControlsRef.current;
+    if (!transformControls) return;
+
+    if (transformMode === null) {
+      // Hide the gizmo
+      transformControls.enabled = false;
+      transformControls.visible = false;
+      transformControls.getHelper().visible = false;
+
+      // Restore any removed elements when gizmo is hidden
+      removedGizmoElementsRef.current.forEach(({ parent, child }) => {
+        parent.add(child);
+      });
+      removedGizmoElementsRef.current = [];
+    } else {
+      // Show and set the mode
+      transformControls.enabled = true;
+      transformControls.visible = true;
+      transformControls.getHelper().visible = true;
+      transformControls.setMode(transformMode);
+
+      // Remove XYZE and E (yellow/gray free-rotation circles) in rotate mode
+      // Note: We must physically remove them because TransformControls resets
+      // visibility/opacity every frame in updateMatrixWorld()
+      if (transformMode === 'rotate') {
+        const helper = transformControls.getHelper();
+        const toRemove: { parent: THREE.Object3D; child: THREE.Object3D }[] = [];
+
+        helper.traverse((child: THREE.Object3D) => {
+          // TransformControls uses .name property for axis identification
+          // "XYZE" = gray free-rotation circle, "E" = yellow outer ring
+          if (child.name === 'XYZE' || child.name === 'E') {
+            if (child.parent) {
+              toRemove.push({ parent: child.parent, child });
+            }
+          }
+        });
+
+        // Remove after traversal to avoid mutation during iteration
+        toRemove.forEach(({ parent, child }) => {
+          parent.remove(child);
+        });
+        removedGizmoElementsRef.current = toRemove;
+      } else {
+        // Restore removed elements when switching to non-rotate mode
+        removedGizmoElementsRef.current.forEach(({ parent, child }) => {
+          parent.add(child);
+        });
+        removedGizmoElementsRef.current = [];
+      }
+    }
+  }, [transformMode]);
 
   // Reset view function
   const resetView = useCallback(() => {
@@ -402,12 +575,16 @@ const Viewer3D = ({
     controlsRef.current.update();
   }, [fitCameraToBounds]);
 
+  // Expose resetView function to parent component
+  useEffect(() => {
+    onResetViewRef.current?.(resetView);
+  }, [resetView]);
+
   return (
     <div
       ref={containerRef}
       className={`w-full h-full ${className}`}
       style={{ minHeight: '400px' }}
-      data-reset-view={resetView}
     />
   );
 };
