@@ -28,8 +28,8 @@ const ViewerSharePanel = ({ isOpen, onClose, permissions, projectId, scanId }: V
       await navigator.clipboard.writeText(text);
       setCopied(type);
       setTimeout(() => setCopied(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+    } catch {
+      // Clipboard API failed - likely not supported or no permission
     }
   };
 
@@ -116,49 +116,46 @@ const ViewerSharePanel = ({ isOpen, onClose, permissions, projectId, scanId }: V
               <div className="grid grid-cols-2 gap-4">
                 {/* Screenshot */}
                 <button
-                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors"
-                  onClick={() => {
-                    // TODO: Implement screenshot capture using renderer.domElement.toDataURL()
-                  }}
+                  disabled
+                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 opacity-50 cursor-not-allowed"
+                  title="Coming soon"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                     <Image className="h-6 w-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-medium">Screenshot</p>
-                    <p className="text-xs text-muted-foreground">PNG image</p>
+                    <p className="text-xs text-muted-foreground">Coming soon</p>
                   </div>
                 </button>
 
                 {/* Measurements CSV */}
                 <button
-                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors"
-                  onClick={() => {
-                    // TODO: Implement measurements CSV export
-                  }}
+                  disabled
+                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 opacity-50 cursor-not-allowed"
+                  title="Coming soon"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                     <FileDown className="h-6 w-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-medium">Measurements</p>
-                    <p className="text-xs text-muted-foreground">CSV format</p>
+                    <p className="text-xs text-muted-foreground">Coming soon</p>
                   </div>
                 </button>
 
                 {/* Full Model */}
                 <button
-                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors col-span-2"
-                  onClick={() => {
-                    // TODO: Implement model download functionality
-                  }}
+                  disabled
+                  className="flex flex-col items-center gap-3 p-6 rounded-lg border border-border bg-muted/50 opacity-50 cursor-not-allowed col-span-2"
+                  title="Coming soon"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                     <Download className="h-6 w-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-medium">Download Model</p>
-                    <p className="text-xs text-muted-foreground">Full 3D scan with annotations</p>
+                    <p className="text-xs text-muted-foreground">Coming soon</p>
                   </div>
                 </button>
               </div>

@@ -116,7 +116,6 @@ const Viewer3D = ({
 
     // Validate bounding box - skip if empty or degenerate
     if (boundingBox.isEmpty()) {
-      console.warn('[Viewer3D] fitCameraToBounds: Bounding box is empty, skipping camera fit');
       return;
     }
 
@@ -133,7 +132,6 @@ const Viewer3D = ({
 
     // Check for degenerate bounding box (all dimensions near zero)
     if (maxDim < 0.001) {
-      console.warn('[Viewer3D] fitCameraToBounds: Bounding box has near-zero size, using default camera position');
       camera.position.set(5, 5, 5);
       controls.target.set(center.x, center.y, center.z);
       controls.update();
@@ -157,12 +155,6 @@ const Viewer3D = ({
     camera.near = cameraDistance / 100;
     camera.far = cameraDistance * 100;
     camera.updateProjectionMatrix();
-
-    console.log('[Viewer3D] Camera fitted to bounds:', {
-      center: center.toArray(),
-      size: size.toArray(),
-      cameraDistance,
-    });
   }, []);
 
   // Main scene setup
@@ -171,25 +163,15 @@ const Viewer3D = ({
 
     const containerWidth = containerRef.current.clientWidth;
     const containerHeight = containerRef.current.clientHeight;
-    console.log('[Viewer3D] Scene setup starting:', {
-      containerWidth,
-      containerHeight,
-      splatUrl,
-      showGrid,
-    });
 
-    // Warn if container has zero dimensions
+    // Skip setup if container has zero dimensions
     if (containerWidth === 0 || containerHeight === 0) {
-      console.warn('[Viewer3D] WARNING: Container has zero dimensions!', {
-        width: containerWidth,
-        height: containerHeight,
-      });
+      return;
     }
 
     // Scene setup
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    console.log('[Viewer3D] Scene created');
 
     // Create SceneManager
     const sceneManager = new SceneManager(scene);
@@ -217,11 +199,6 @@ const Viewer3D = ({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
-    console.log('[Viewer3D] WebGL renderer created:', {
-      canvasWidth: renderer.domElement.width,
-      canvasHeight: renderer.domElement.height,
-      pixelRatio: renderer.getPixelRatio(),
-    });
 
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -253,11 +230,9 @@ const Viewer3D = ({
     gridHelper.visible = showGrid;
     scene.add(gridHelper);
     gridRef.current = gridHelper;
-    console.log('[Viewer3D] Grid created:', { visible: showGrid });
 
     // Only add placeholder geometry if no splat URL is provided
     if (!splatUrl) {
-      console.log('[Viewer3D] No splatUrl - creating placeholder cube');
       const geometry = new THREE.BoxGeometry(2, 2, 2);
       const material = new THREE.MeshStandardMaterial({
         color: 0xF59E0B,
@@ -286,8 +261,6 @@ const Viewer3D = ({
       // Register with scene manager
       sceneManager.addObject('main-model', cube);
       sceneManager.addObject('floor', floor);
-    } else {
-      console.log('[Viewer3D] splatUrl provided - skipping placeholder cube, will load splat:', splatUrl);
     }
 
     // Notify parent that scene is ready
@@ -352,19 +325,10 @@ const Viewer3D = ({
 
   // Load splat when URL changes (must run AFTER main scene setup)
   useEffect(() => {
-    console.log('[Viewer3D] Splat load effect triggered:', {
-      splatUrl,
-      hasSceneManager: !!sceneManagerRef.current,
-      hasRenderer: !!rendererRef.current,
-      isLoading: isSplatLoadingRef.current,
-    });
-
     if (!splatUrl || !sceneManagerRef.current || !rendererRef.current) {
-      console.log('[Viewer3D] Splat load effect skipped - missing dependencies');
       return;
     }
     if (isSplatLoadingRef.current) {
-      console.log('[Viewer3D] Splat load effect skipped - already loading');
       return;
     }
 
@@ -373,11 +337,9 @@ const Viewer3D = ({
     const scene = sceneRef.current;
 
     if (!scene) {
-      console.log('[Viewer3D] Splat load effect skipped - no scene');
       return;
     }
 
-    console.log('[Viewer3D] Starting splat load for:', splatUrl);
     isSplatLoadingRef.current = true;
     onSplatLoadStartRef.current?.();
 
@@ -399,21 +361,11 @@ const Viewer3D = ({
     sceneManager.setSplatRenderer(splatRenderer);
 
     // Load the splat
-    console.log('[Viewer3D] Calling sceneManager.loadSplat...');
     sceneManager.loadSplat(splatUrl, (progress) => {
-      console.log('[Viewer3D] Splat load progress:', progress.percentage + '%');
       onSplatLoadProgressRef.current?.(progress);
     })
       .then((metadata) => {
         isSplatLoadingRef.current = false;
-        console.log('[Viewer3D] Splat load SUCCESS:', {
-          splatCount: metadata.splatCount,
-          hasBoundingBox: !!metadata.boundingBox,
-          boundingBox: metadata.boundingBox ? {
-            min: metadata.boundingBox.min.toArray(),
-            max: metadata.boundingBox.max.toArray(),
-          } : null,
-        });
 
         // Fit camera to splat bounds
         if (metadata.boundingBox) {
@@ -427,7 +379,6 @@ const Viewer3D = ({
       })
       .catch((error) => {
         isSplatLoadingRef.current = false;
-        console.error('[Viewer3D] Splat load FAILED:', error);
         onSplatLoadErrorRef.current?.(error instanceof Error ? error : new Error(String(error)));
       });
   }, [splatUrl, fitCameraToBounds]);

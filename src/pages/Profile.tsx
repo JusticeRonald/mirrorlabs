@@ -9,7 +9,6 @@ import {
   Calendar,
   FolderOpen,
   Scan,
-  Settings,
   Bell,
   Shield,
   LogOut
@@ -19,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import ProjectsNavigation from '@/components/ProjectsNavigation';
+import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { mockProjects, getOwnedProjects, getSharedProjects } from '@/data/mockProjects';
 
@@ -46,19 +45,16 @@ const Profile = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <ProjectsNavigation />
-
-      <main className="pt-16">
-        <div className="container max-w-4xl mx-auto px-6 py-8">
-          {/* Back Link */}
-          <Link
-            to="/portfolio"
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Portfolio
-          </Link>
+    <AppLayout>
+      <div className="container max-w-4xl mx-auto px-6 py-8">
+        {/* Back Link */}
+        <Link
+          to="/projects"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Projects
+        </Link>
 
           {/* Profile Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 mb-8">
@@ -69,9 +65,6 @@ const Profile = () => {
                   {user.initials}
                 </span>
               </div>
-              <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-card border border-border flex items-center justify-center hover:bg-muted transition-colors">
-                <Settings className="w-4 h-4" />
-              </button>
             </div>
 
             <div className="flex-1">
@@ -242,7 +235,7 @@ const Profile = () => {
 
                 <div className="mt-4 text-center">
                   <Button variant="outline" asChild>
-                    <Link to="/portfolio">View All Projects</Link>
+                    <Link to="/projects">View All Projects</Link>
                   </Button>
                 </div>
               </div>
@@ -345,8 +338,7 @@ const Profile = () => {
             </TabsContent>
           </Tabs>
         </div>
-      </main>
-    </div>
+    </AppLayout>
   );
 };
 

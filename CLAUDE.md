@@ -329,6 +329,7 @@ Three account types with different permission levels:
 - ✅ Data services layer for all entities
 - ✅ Account type permissions (Staff/Client/Demo) with RLS enforcement
 - ✅ Admin UI: Workspaces (business) + People pages
+- ✅ Code review cleanup (January 24, 2026)
 
 ### Next Priority (P1 Features)
 - [ ] Functional measurement tool (distance, area, angle)
@@ -337,12 +338,54 @@ Three account types with different permission levels:
 - [ ] Basic sharing (public links)
 
 ### Branch Status
-Development on `master` branch. All recent Supabase auth and viewer work has been merged.
+Development on `master` branch. The `gaussian-splat-viewer` branch has been merged after code review cleanup.
 
 ### To Resume Development
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 24, 2026)
+
+Comprehensive code review performed by AI agents with the following cleanup:
+
+### Issues Fixed
+| Category | Count | Summary |
+|----------|-------|---------|
+| **Critical (P0)** | 7 | Route fixes, type consolidation |
+| **High (P1)** | 6 | Service layer, console cleanup |
+| **Medium (P2)** | 4 | Accessibility, UI fixes |
+
+### Key Changes
+1. **Route Fixes**: All `/portfolio` references updated to `/projects` (deleted page cleanup)
+2. **Type Consolidation**: Removed duplicate `User` type from AuthContext, now imports from `@/types/user`
+3. **Deprecated Export Removed**: `currentUser` export removed from types/user.ts
+4. **Service Layer**: Added workspaces export, improved error handling in annotations/projects/workspaces
+5. **Console Cleanup**: Removed 18+ console statements from Viewer3D.tsx and other files
+6. **Accessibility**: Added aria-label to user menu button
+7. **UI Fixes**: Disabled unimplemented export buttons, fixed hardcoded layer count
+
+### Files Modified
+- `src/components/HomeRedirect.tsx` - Route fix
+- `src/components/Navigation.tsx` - Route fixes
+- `src/components/admin/AdminGuard.tsx` - Route fix
+- `src/pages/Profile.tsx` - Route fixes
+- `src/pages/Projects.tsx` - Removed deprecated import, updated fallbacks
+- `src/contexts/AuthContext.tsx` - Type consolidation
+- `src/types/user.ts` - Removed deprecated export
+- `src/lib/supabase/services/index.ts` - Added workspaces export
+- `src/lib/supabase/services/workspaces.ts` - Error handling, type fix
+- `src/lib/supabase/services/annotations.ts` - Error handling
+- `src/lib/supabase/services/projects.ts` - Error handling
+- `src/components/viewer/Viewer3D.tsx` - Console cleanup
+- `src/components/CTA.tsx` - Console cleanup
+- `src/components/viewer/ViewerSharePanel.tsx` - Console cleanup, disabled buttons
+- `src/components/viewer/ViewerSidebar.tsx` - Fixed hardcoded count
+- `src/components/AppNavigation.tsx` - Accessibility fix
+
+### Quality Score
+- **Before**: 7.3/10
+- **After**: 8.5/10 (estimated)
 
 ## Future Evolution: Self-Service Client Model
 

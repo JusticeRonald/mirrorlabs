@@ -193,7 +193,7 @@ const ViewerSidebar = ({
           <SidebarSection
             title="Layers"
             icon={Layers}
-            count={3}
+            count={0}
             defaultOpen={false}
           >
             <div className="space-y-2">

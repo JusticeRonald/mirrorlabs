@@ -102,7 +102,7 @@ const Navigation = () => {
                   </span>
                 )}
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to={isStaff ? "/admin" : "/portfolio"}>
+                  <Link to={isStaff ? "/admin" : "/projects"}>
                     {isStaff ? "Dashboard" : "My Projects"}
                   </Link>
                 </Button>
@@ -125,9 +125,9 @@ const Navigation = () => {
                     {/* Only show Portfolio link for non-staff users */}
                     {!isStaff && (
                       <DropdownMenuItem asChild>
-                        <Link to="/portfolio" className="flex items-center gap-2 cursor-pointer">
+                        <Link to="/projects" className="flex items-center gap-2 cursor-pointer">
                           <FolderOpen className="w-4 h-4" />
-                          Portfolio
+                          My Projects
                         </Link>
                       </DropdownMenuItem>
                     )}
@@ -187,7 +187,7 @@ const Navigation = () => {
                 {isLoggedIn ? (
                   <>
                     <Link
-                      to={isStaff ? "/admin" : "/portfolio"}
+                      to={isStaff ? "/admin" : "/projects"}
                       className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setMobileMenuOpen(false)}
                     >

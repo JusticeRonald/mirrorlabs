@@ -2,9 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ScrollToTop from "@/components/ScrollToTop";
+import HomeRedirect from "@/components/HomeRedirect";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
 import UseCasesPage from "./pages/UseCasesPage";
@@ -13,7 +14,7 @@ import Demo from "./pages/Demo";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import ViewerPage from "./pages/ViewerPage";
-import Portfolio from "./pages/Portfolio";
+// Portfolio.tsx is deprecated - now redirects to /projects
 import Profile from "./pages/Profile";
 import Pricing from "./pages/Pricing";
 import NotFound from "./pages/NotFound";
@@ -38,7 +39,8 @@ const App = () => (
         <BrowserRouter>
           <ScrollToTop />
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/home" element={<Index />} />
             <Route path="/product" element={<Product />} />
             <Route path="/use-cases" element={<UseCasesPage />} />
             <Route path="/pricing" element={<Pricing />} />
@@ -47,7 +49,7 @@ const App = () => (
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />} />
             <Route path="/viewer/:projectId/:scanId" element={<ViewerPage />} />
-            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/portfolio" element={<Navigate to="/projects" replace />} />
             <Route path="/profile" element={<Profile />} />
             {/* Admin Routes */}
             <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />

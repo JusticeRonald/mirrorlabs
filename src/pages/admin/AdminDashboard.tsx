@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AdminLayout } from '@/components/admin';
-import { getWorkspaces, type WorkspaceWithCounts } from '@/lib/supabase/services/workspaces';
+import { getWorkspaces, getOrganizations, type WorkspaceWithCounts, type OrganizationWithCounts } from '@/lib/supabase/services/workspaces';
 
 interface StatCardProps {
   title: string;

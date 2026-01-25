@@ -2,16 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback,
 import { Session, User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { Profile } from '@/lib/supabase/database.types';
-import { AccountType, ACCOUNT_PERMISSIONS, AccountPermissions } from '@/types/user';
-
-// Legacy User type for backward compatibility
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  initials: string;
-}
+import { AccountType, ACCOUNT_PERMISSIONS, AccountPermissions, User } from '@/types/user';
 
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -111,31 +102,90 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
 
     // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      try {
-        setSession(session);
-        if (session?.user) {
-          const userProfile = await fetchProfile(session.user.id);
-          setProfile(userProfile);
+    supabase.auth.getSession()
+      .then(async ({ data: { session }, error }) => {
+        if (error) {
+          console.warn('[Auth] Session error, clearing stale state:', error.message);
+          // Clear potentially corrupted storage
+          try {
+            const keysToRemove = Object.keys(localStorage).filter(
+              key => key.startsWith('sb-') || key.includes('supabase') || key.includes('mirrorlabs-auth')
+            );
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            console.log('[Auth] Cleared', keysToRemove.length, 'stale auth keys from storage');
+          } catch (e) {
+            console.warn('[Auth] Could not clear storage:', e);
+          }
+          setSession(null);
+          setProfile(null);
+          return;
         }
-      } catch (error) {
-        console.error('Error during auth initialization:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
         setSession(session);
-        setIsDemoMode(false);
-
         if (session?.user) {
           const userProfile = await fetchProfile(session.user.id);
           setProfile(userProfile);
         } else {
+          // No valid session - ensure clean state
           setProfile(null);
+        }
+      })
+      .catch((error) => {
+        // Handle promise rejection (network error, invalid credentials, etc.)
+        console.error('[Auth] Failed to get session:', error);
+        setSession(null);
+        setProfile(null);
+      })
+      .finally(() => {
+        // ALWAYS set loading to false, whether promise resolves or rejects
+        setIsLoading(false);
+      });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[Auth] Auth state change:', event, session?.user?.email);
+
+        // Handle specific events
+        switch (event) {
+          case 'SIGNED_OUT':
+            // Explicitly clear all state on sign out
+            setSession(null);
+            setProfile(null);
+            setIsDemoMode(false);
+            break;
+
+          case 'TOKEN_REFRESHED':
+            // Token was refreshed - update session but don't refetch profile
+            console.log('[Auth] Token refreshed successfully');
+            setSession(session);
+            break;
+
+          case 'SIGNED_IN':
+          case 'USER_UPDATED':
+            // User signed in or updated - fetch/refresh profile
+            setSession(session);
+            setIsDemoMode(false);
+            if (session?.user) {
+              const userProfile = await fetchProfile(session.user.id);
+              setProfile(userProfile);
+            }
+            break;
+
+          case 'INITIAL_SESSION':
+            // Initial session load - handled by getSession above
+            break;
+
+          default:
+            // Any other event - update session state
+            setSession(session);
+            setIsDemoMode(false);
+            if (session?.user) {
+              const userProfile = await fetchProfile(session.user.id);
+              setProfile(userProfile);
+            } else {
+              setProfile(null);
+            }
         }
       }
     );

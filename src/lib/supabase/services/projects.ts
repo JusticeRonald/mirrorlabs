@@ -105,11 +105,16 @@ export async function createProject(
 
   // Add creator as owner
   if (data) {
-    await supabase.from('project_members').insert({
+    const { error: memberError } = await supabase.from('project_members').insert({
       project_id: data.id,
       user_id: project.created_by,
       role: 'owner',
     });
+
+    if (memberError) {
+      console.error('Error adding creator as project member:', memberError);
+      // Project was created, but member wasn't added - log but don't fail
+    }
   }
 
   return { data, error: null };

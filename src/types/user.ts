@@ -100,6 +100,3 @@ export const mockUsers: User[] = [
   { id: 'user-10', name: 'Emily Stone', email: 'emily@mirrorlabs.com', initials: 'ES' },
 ];
 
-// Note: currentUser is now managed by AuthContext
-// This is kept for backward compatibility with mock data
-export const currentUser: User = mockUsers[0];

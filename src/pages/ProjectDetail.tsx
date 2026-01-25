@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Search, MoreHorizontal, MessageSquare, Users, Calendar, Upload, Archive, Ruler } from "lucide-react";
+import { ChevronRight, Plus, Search, MoreHorizontal, MessageSquare, Users, Calendar, Upload, Archive, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,24 +12,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { mockProjects } from "@/data/mockProjects";
 import RoleBadge from "@/components/ui/role-badge";
-import ProjectsNavigation from "@/components/ProjectsNavigation";
+import AppLayout from "@/components/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 
 const ProjectDetail = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { permissions } = useAuth();
   const project = mockProjects.find((p) => p.id === projectId);
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-2">Project not found</h1>
-          <p className="text-muted-foreground mb-4">The project you're looking for doesn't exist.</p>
-          <Button asChild>
-            <Link to="/projects">Back to Projects</Link>
-          </Button>
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-foreground mb-2">Project not found</h1>
+            <p className="text-muted-foreground mb-4">The project you're looking for doesn't exist.</p>
+            <Button asChild>
+              <Link to="/projects">Back to Projects</Link>
+            </Button>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
@@ -38,23 +42,16 @@ const ProjectDetail = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <ProjectsNavigation />
-
-      <main className="pt-16">
-        <div className="container mx-auto px-6 py-8">
-          {/* Breadcrumb & Back */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
-            <Link
-              to="/projects"
-              className="flex items-center gap-1 hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Projects
-            </Link>
-            <span>/</span>
-            <span className="text-foreground">{project.name}</span>
-          </div>
+    <AppLayout>
+      <div className="container mx-auto px-6 py-8">
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+          <Link to="/projects" className="hover:text-foreground transition-colors">
+            Projects
+          </Link>
+          <ChevronRight className="w-4 h-4" />
+          <span className="text-foreground">{project.name}</span>
+        </nav>
 
           {/* Project Header */}
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
@@ -87,7 +84,7 @@ const ProjectDetail = () => {
             </div>
 
             <div className="flex items-center gap-3">
-              {project.userRole !== 'viewer' && (
+              {permissions.canUploadScans && project.userRole !== 'viewer' && (
                 <>
                   <Button variant="outline" className="gap-2">
                     <Upload className="w-4 h-4" />
@@ -207,7 +204,7 @@ const ProjectDetail = () => {
                       </DropdownMenuItem>
                       <DropdownMenuItem>View Details</DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      {project.userRole !== 'viewer' && (
+                      {permissions.canUploadScans && project.userRole !== 'viewer' && (
                         <>
                           <DropdownMenuItem>Rename</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
@@ -251,7 +248,7 @@ const ProjectDetail = () => {
             ))}
 
             {/* Add New Scan Card */}
-            {project.userRole !== 'viewer' && (
+            {permissions.canUploadScans && project.userRole !== 'viewer' && (
               <div className="rounded-xl border border-dashed border-border bg-card/50 hover:border-primary/50 hover:bg-card transition-all duration-300 cursor-pointer">
                 <div className="aspect-[4/3] flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary transition-colors">
                   <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
@@ -263,8 +260,7 @@ const ProjectDetail = () => {
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </AppLayout>
   );
 };
 

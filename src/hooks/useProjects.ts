@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { getProjects, getProjectById, type ProjectsFilter } from '@/lib/supabase/services/projects';
 import type { ProjectWithMembers } from '@/lib/supabase/database.types';
 import { mockProjects, type Project as MockProject, type Scan as MockScan } from '@/data/mockProjects';
 import { useAuth } from '@/contexts/AuthContext';
+
+// Well-known ID for demo workspace (matches migration)
+export const DEMO_WORKSPACE_ID = '00000000-0000-0000-0000-000000000002';
 
 // Unified project type that works for both mock and real data
 export interface UnifiedProject {
@@ -119,7 +122,10 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsResult
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const isUsingMockData = !isSupabaseConfigured() || isDemoMode;
+  // Use mock data only when Supabase is not configured at all
+  // When in demo mode with Supabase configured, query the demo workspace
+  const supabaseConfigured = isSupabaseConfigured();
+  const isUsingMockData = !supabaseConfigured;
 
   const fetchProjects = useCallback(async () => {
     if (!enabled) return;
@@ -128,8 +134,8 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsResult
     setError(null);
 
     try {
-      if (isUsingMockData) {
-        // Use mock data
+      if (!supabaseConfigured) {
+        // Ultimate fallback: use hardcoded mock data when Supabase not configured
         let filtered = mockProjects;
 
         if (filter?.industry) {
@@ -145,17 +151,55 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsResult
         }
 
         setProjects(filtered.map(mockToUnified));
+      } else if (isDemoMode) {
+        // Demo mode with Supabase: query demo workspace
+        let query = supabase
+          .from('projects')
+          .select(`
+            *,
+            scans (*),
+            members:project_members (
+              id,
+              user_id,
+              role,
+              created_at,
+              profile:profiles (id, email, name, avatar_url, initials)
+            )
+          `)
+          .eq('workspace_id', DEMO_WORKSPACE_ID);
+
+        if (filter?.industry) {
+          query = query.eq('industry', filter.industry);
+        }
+
+        if (filter?.isArchived !== undefined) {
+          query = query.eq('is_archived', filter.isArchived);
+        }
+
+        const { data, error: queryError } = await query.order('updated_at', { ascending: false });
+
+        if (queryError) {
+          // Fallback to mock data if demo workspace query fails
+          console.warn('Demo workspace query failed, falling back to mock data:', queryError);
+          setProjects(mockProjects.map(mockToUnified));
+        } else {
+          setProjects((data || []).map(p => supabaseToUnified(p as ProjectWithMembers, user?.id)));
+        }
       } else {
-        // Use Supabase
+        // Authenticated mode: use regular Supabase query
         const data = await getProjects(filter);
         setProjects(data.map(p => supabaseToUnified(p, user?.id)));
       }
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch projects'));
+      // Fallback to mock data on error
+      if (!supabaseConfigured || isDemoMode) {
+        setProjects(mockProjects.map(mockToUnified));
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [enabled, isUsingMockData, filter, user?.id]);
+  }, [enabled, supabaseConfigured, isDemoMode, filter, user?.id]);
 
   useEffect(() => {
     fetchProjects();
@@ -184,7 +228,8 @@ export function useProject(projectId: string | undefined): UseProjectResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const isUsingMockData = !isSupabaseConfigured() || isDemoMode;
+  const supabaseConfigured = isSupabaseConfigured();
+  const isUsingMockData = !supabaseConfigured;
 
   const fetchProject = useCallback(async () => {
     if (!projectId) {
@@ -197,19 +242,52 @@ export function useProject(projectId: string | undefined): UseProjectResult {
     setError(null);
 
     try {
-      if (isUsingMockData) {
+      if (!supabaseConfigured) {
+        // Ultimate fallback: use hardcoded mock data
         const mockProject = mockProjects.find(p => p.id === projectId);
         setProject(mockProject ? mockToUnified(mockProject) : null);
+      } else if (isDemoMode) {
+        // Demo mode with Supabase: query demo workspace for specific project
+        const { data, error: queryError } = await supabase
+          .from('projects')
+          .select(`
+            *,
+            scans (*),
+            members:project_members (
+              id,
+              user_id,
+              role,
+              created_at,
+              profile:profiles (id, email, name, avatar_url, initials)
+            )
+          `)
+          .eq('id', projectId)
+          .eq('workspace_id', DEMO_WORKSPACE_ID)
+          .single();
+
+        if (queryError) {
+          // Fallback to mock data if query fails
+          const mockProject = mockProjects.find(p => p.id === projectId);
+          setProject(mockProject ? mockToUnified(mockProject) : null);
+        } else {
+          setProject(data ? supabaseToUnified(data as ProjectWithMembers, user?.id) : null);
+        }
       } else {
+        // Authenticated mode: use regular Supabase query
         const data = await getProjectById(projectId);
         setProject(data ? supabaseToUnified(data, user?.id) : null);
       }
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch project'));
+      // Fallback to mock data on error
+      if (!supabaseConfigured || isDemoMode) {
+        const mockProject = mockProjects.find(p => p.id === projectId);
+        setProject(mockProject ? mockToUnified(mockProject) : null);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, isUsingMockData, user?.id]);
+  }, [projectId, supabaseConfigured, isDemoMode, user?.id]);
 
   useEffect(() => {
     fetchProject();
@@ -220,6 +298,73 @@ export function useProject(projectId: string | undefined): UseProjectResult {
     isLoading,
     error,
     refetch: fetchProject,
+    isUsingMockData,
+  };
+}
+
+/**
+ * Hook for Admin Demo page - always queries demo workspace directly
+ * Used by staff to manage demo content
+ */
+export function useDemoProjects(): UseProjectsResult {
+  const { user } = useAuth();
+  const [projects, setProjects] = useState<UnifiedProject[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const supabaseConfigured = isSupabaseConfigured();
+  const isUsingMockData = !supabaseConfigured;
+
+  const fetchProjects = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      if (!supabaseConfigured) {
+        // Fallback to mock data when Supabase not configured
+        setProjects(mockProjects.map(mockToUnified));
+      } else {
+        // Query demo workspace directly
+        const { data, error: queryError } = await supabase
+          .from('projects')
+          .select(`
+            *,
+            scans (*),
+            members:project_members (
+              id,
+              user_id,
+              role,
+              created_at,
+              profile:profiles (id, email, name, avatar_url, initials)
+            )
+          `)
+          .eq('workspace_id', DEMO_WORKSPACE_ID)
+          .order('updated_at', { ascending: false });
+
+        if (queryError) {
+          console.warn('Demo workspace query failed:', queryError);
+          setProjects(mockProjects.map(mockToUnified));
+        } else {
+          setProjects((data || []).map(p => supabaseToUnified(p as ProjectWithMembers, user?.id)));
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch demo projects'));
+      setProjects(mockProjects.map(mockToUnified));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [supabaseConfigured, user?.id]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  return {
+    projects,
+    isLoading,
+    error,
+    refetch: fetchProjects,
     isUsingMockData,
   };
 }

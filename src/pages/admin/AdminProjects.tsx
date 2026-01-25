@@ -7,14 +7,14 @@ import {
   Building2,
   Calendar,
   ArrowUpRight,
-  Grid3X3,
   List,
+  LayoutList,
   FileStack,
   Archive,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,9 +32,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { AdminLayout } from '@/components/admin';
 import { mockProjects, type Project } from '@/data/mockProjects';
-import { getWorkspaces, type WorkspaceWithCounts } from '@/lib/supabase/services/workspaces';
+import { getOrganizations, type OrganizationWithCounts } from '@/lib/supabase/services/workspaces';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { DEMO_WORKSPACE_ID } from '@/hooks/useProjects';
+import type { ProjectWithMembers } from '@/lib/supabase/database.types';
 
-// Map projects to organizations for demo mode
+// Map projects to organizations for demo mode (fallback when Supabase not configured)
 const projectOrgMap: Record<string, string> = {
   'proj-1': 'org-1', // Downtown Office Tower -> Apex Builders
   'proj-2': 'org-1', // Hospital Wing Addition -> Apex Builders
@@ -50,11 +53,26 @@ const projectOrgMap: Record<string, string> = {
   'proj-12': 'org-3', // Concert Venue -> City Arts Foundation
 };
 
+// Extended project type for admin display
+interface AdminProject {
+  id: string;
+  name: string;
+  description: string;
+  thumbnail: string;
+  industry: 'construction' | 'real-estate' | 'cultural';
+  scanCount: number;
+  isArchived: boolean;
+  updatedAt: string;
+  workspaceId?: string;
+  organization?: OrganizationWithCounts;
+  scans: Array<{ id: string }>;
+}
+
 interface ProjectWithOrg extends Project {
   organization?: OrganizationWithCounts;
 }
 
-type ViewMode = 'grid' | 'list';
+type ViewMode = 'list' | 'compact';
 type SortBy = 'updated' | 'name' | 'scans';
 
 const industryLabels: Record<string, string> = {
@@ -71,31 +89,90 @@ const industryColors: Record<string, string> = {
 
 const AdminProjects = () => {
   const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
+  const [projects, setProjects] = useState<AdminProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterClient, setFilterClient] = useState<string>('all');
   const [filterIndustry, setFilterIndustry] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'archived'>('all');
   const [sortBy, setSortBy] = useState<SortBy>('updated');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
+
+      // Fetch organizations for client filter
       const orgs = await getOrganizations();
       setOrganizations(orgs);
+
+      // Fetch projects - from Supabase or fallback to mock data
+      if (isSupabaseConfigured()) {
+        // Query all projects except demo workspace
+        const { data, error } = await supabase
+          .from('projects')
+          .select(`
+            *,
+            scans (id)
+          `)
+          .neq('workspace_id', DEMO_WORKSPACE_ID)
+          .order('updated_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching projects:', error);
+          // Fallback to mock data
+          setProjects(mockProjects.map(p => ({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            thumbnail: p.thumbnail,
+            industry: p.industry,
+            scanCount: p.scanCount,
+            isArchived: p.isArchived,
+            updatedAt: p.updatedAt,
+            organization: orgs.find(org => org.id === projectOrgMap[p.id]),
+            scans: p.scans.map(s => ({ id: s.id })),
+          })));
+        } else {
+          // Map Supabase projects to AdminProject format
+          const adminProjects: AdminProject[] = (data || []).map((p: ProjectWithMembers & { scans: { id: string }[] }) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description || '',
+            thumbnail: p.thumbnail_url || '/placeholder.svg',
+            industry: p.industry,
+            scanCount: p.scans?.length || 0,
+            isArchived: p.is_archived,
+            updatedAt: p.updated_at,
+            workspaceId: p.workspace_id,
+            organization: orgs.find(org => org.id === p.workspace_id),
+            scans: p.scans || [],
+          }));
+          setProjects(adminProjects);
+        }
+      } else {
+        // Fallback to mock data when Supabase not configured
+        setProjects(mockProjects.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          thumbnail: p.thumbnail,
+          industry: p.industry,
+          scanCount: p.scanCount,
+          isArchived: p.isArchived,
+          updatedAt: p.updatedAt,
+          organization: orgs.find(org => org.id === projectOrgMap[p.id]),
+          scans: p.scans.map(s => ({ id: s.id })),
+        })));
+      }
+
       setIsLoading(false);
     };
     fetchData();
   }, []);
 
-  // Enrich projects with organization data
-  const projectsWithOrgs: ProjectWithOrg[] = useMemo(() => {
-    return mockProjects.map((project) => ({
-      ...project,
-      organization: organizations.find((org) => org.id === projectOrgMap[project.id]),
-    }));
-  }, [organizations]);
+  // Projects already have organization data from fetch
+  const projectsWithOrgs = useMemo(() => projects, [projects]);
 
   // Filter and sort projects
   const filteredProjects = useMemo(() => {
@@ -111,9 +188,16 @@ const AdminProjects = () => {
       );
     }
 
-    // Client filter
+    // Client filter - use workspaceId for Supabase, projectOrgMap for mock
     if (filterClient !== 'all') {
-      result = result.filter((p) => projectOrgMap[p.id] === filterClient);
+      result = result.filter((p) => {
+        // For Supabase projects, use workspaceId
+        if (p.workspaceId) {
+          return p.workspaceId === filterClient;
+        }
+        // For mock projects, use projectOrgMap
+        return projectOrgMap[p.id] === filterClient;
+      });
     }
 
     // Industry filter
@@ -144,13 +228,13 @@ const AdminProjects = () => {
     return result;
   }, [projectsWithOrgs, searchQuery, filterClient, filterIndustry, filterStatus, sortBy]);
 
-  // Stats
-  const totalProjects = mockProjects.length;
-  const activeProjects = mockProjects.filter((p) => !p.isArchived).length;
-  const archivedProjects = mockProjects.filter((p) => p.isArchived).length;
+  // Stats - use projects state, not mockProjects
+  const totalProjects = projects.length;
+  const activeProjects = projects.filter((p) => !p.isArchived).length;
+  const archivedProjects = projects.filter((p) => p.isArchived).length;
 
   // Get first scan for a project for the viewer link
-  const getViewerLink = (project: Project) => {
+  const getViewerLink = (project: AdminProject) => {
     const firstScan = project.scans[0];
     if (firstScan) {
       return `/viewer/${project.id}/${firstScan.id}`;
@@ -223,18 +307,20 @@ const AdminProjects = () => {
           {/* View Toggle */}
           <div className="flex items-center gap-2">
             <Button
-              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('grid')}
-            >
-              <Grid3X3 className="w-4 h-4" />
-            </Button>
-            <Button
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
               size="icon"
               onClick={() => setViewMode('list')}
+              title="List view"
             >
               <List className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setViewMode('compact')}
+              title="Compact view"
+            >
+              <LayoutList className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -306,100 +392,7 @@ const AdminProjects = () => {
             </p>
           </CardContent>
         </Card>
-      ) : viewMode === 'grid' ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredProjects.map((project) => (
-            <Card key={project.id} className="group hover:border-primary/50 transition-colors overflow-hidden">
-              {/* Thumbnail */}
-              <div className="relative h-40 overflow-hidden">
-                <img
-                  src={project.thumbnail}
-                  alt={project.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                {project.isArchived && (
-                  <div className="absolute top-2 right-2">
-                    <Badge variant="secondary" className="bg-background/80">
-                      <Archive className="w-3 h-3 mr-1" />
-                      Archived
-                    </Badge>
-                  </div>
-                )}
-              </div>
-
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg truncate">{project.name}</CardTitle>
-                    <CardDescription className="line-clamp-2 mt-1">
-                      {project.description}
-                    </CardDescription>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link to={getViewerLink(project)}>Open in Viewer</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to={`/projects/${project.id}`}>View Details</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem>
-                        {project.isArchived ? 'Unarchive' : 'Archive'}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-
-              <CardContent>
-                {/* Tags */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <Badge className={industryColors[project.industry]}>
-                    {industryLabels[project.industry]}
-                  </Badge>
-                  {project.organization && (
-                    <Link to={`/admin/clients/${project.organization.id}`}>
-                      <Badge variant="outline" className="cursor-pointer hover:bg-muted">
-                        <Building2 className="w-3 h-3 mr-1" />
-                        {project.organization.name}
-                      </Badge>
-                    </Link>
-                  )}
-                </div>
-
-                {/* Stats */}
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                  <div className="flex items-center gap-1">
-                    <FileStack className="w-4 h-4" />
-                    <span>{project.scanCount} scans</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    <span>{new Date(project.updatedAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-
-                <Button
-                  variant="ghost"
-                  className="w-full justify-between group-hover:bg-muted"
-                  asChild
-                >
-                  <Link to={getViewerLink(project)}>
-                    Open Viewer
-                    <ArrowUpRight className="w-4 h-4" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
+      ) : viewMode === 'list' ? (
         /* List View */
         <Card>
           <CardContent className="pt-6">
@@ -478,6 +471,85 @@ const AdminProjects = () => {
                     </DropdownMenu>
                   </div>
                 </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        /* Compact View - Table-style rows */
+        <Card>
+          <CardContent className="pt-4 pb-2">
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="col-span-4">Project</div>
+              <div className="col-span-2">Industry</div>
+              <div className="col-span-2">Client</div>
+              <div className="col-span-1 text-center">Scans</div>
+              <div className="col-span-2">Updated</div>
+              <div className="col-span-1"></div>
+            </div>
+            {/* Table Rows */}
+            <div className="divide-y divide-border">
+              {filteredProjects.map((project) => (
+                <Link
+                  key={project.id}
+                  to={getViewerLink(project)}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                >
+                  <div className="col-span-4 flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0">
+                      <img
+                        src={project.thumbnail}
+                        alt={project.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{project.name}</span>
+                      {project.isArchived && (
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          <Archive className="w-3 h-3 mr-1" />
+                          Archived
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <Badge className={`${industryColors[project.industry]} text-xs`}>
+                      {industryLabels[project.industry]}
+                    </Badge>
+                  </div>
+                  <div className="col-span-2 text-sm text-muted-foreground truncate">
+                    {project.organization?.name || '-'}
+                  </div>
+                  <div className="col-span-1 text-center text-sm text-muted-foreground">
+                    {project.scanCount}
+                  </div>
+                  <div className="col-span-2 text-sm text-muted-foreground">
+                    {new Date(project.updatedAt).toLocaleDateString()}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link to={getViewerLink(project)}>Open Viewer</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link to={`/projects/${project.id}`}>View Details</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem>
+                          {project.isArchived ? 'Unarchive' : 'Archive'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </Link>
               ))}
             </div>
           </CardContent>
