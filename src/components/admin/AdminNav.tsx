@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -6,9 +6,11 @@ import {
   FolderKanban,
   Users,
   PlayCircle,
-  ChevronLeft,
+  ExternalLink,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface NavItem {
   label: string;
@@ -26,6 +28,13 @@ const navItems: NavItem[] = [
 
 export const AdminNav = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   const isActive = (href: string) => {
     if (href === '/admin') {
@@ -35,19 +44,9 @@ export const AdminNav = () => {
   };
 
   return (
-    <aside className="w-64 border-r border-border bg-card min-h-[calc(100vh-4rem)] flex flex-col">
-      {/* Back to app */}
-      <div className="p-4 border-b border-border">
-        <Button variant="ghost" size="sm" asChild className="w-full justify-start">
-          <Link to="/">
-            <ChevronLeft className="w-4 h-4 mr-2" />
-            Back to App
-          </Link>
-        </Button>
-      </div>
-
+    <aside className="w-64 border-r border-border bg-card sticky top-16 h-[calc(100vh-4rem)] flex flex-col">
       {/* Navigation */}
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 p-4 pt-6">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -73,10 +72,22 @@ export const AdminNav = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">
-          Mirror Labs Admin
-        </p>
+      <div className="p-4 border-t border-border space-y-2">
+        <Button variant="ghost" size="sm" asChild className="w-full justify-start">
+          <a href="/home" target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="w-4 h-4 mr-2" />
+            Website
+          </a>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-destructive hover:text-destructive"
+          onClick={handleLogout}
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          Sign Out
+        </Button>
       </div>
     </aside>
   );

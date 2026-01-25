@@ -15,7 +15,7 @@ const CTA = ({ variant = 'full' }: CTAProps) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Email submitted:", email);
+    // TODO: Implement email submission to backend
     setEmail("");
   };
 

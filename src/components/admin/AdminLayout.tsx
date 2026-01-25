@@ -1,8 +1,15 @@
 import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronRight, User, LogOut } from 'lucide-react';
 import AdminNav from './AdminNav';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -11,8 +18,14 @@ interface AdminLayoutProps {
 }
 
 export const AdminLayout = ({ children, title, breadcrumbs = [] }: AdminLayoutProps) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   // Build default breadcrumbs from path
   const defaultBreadcrumbs = [{ label: 'Admin', href: '/admin' }];
@@ -51,16 +64,44 @@ export const AdminLayout = ({ children, title, breadcrumbs = [] }: AdminLayoutPr
                 alt="Mirror Labs"
                 className="h-8 w-8"
               />
-              <span className="text-lg font-semibold text-foreground">Admin</span>
+              <span className="text-lg font-semibold text-foreground">
+                Mirror Labs
+                <span className="text-muted-foreground font-normal"> · Admin</span>
+              </span>
             </Link>
           </div>
 
           {/* User */}
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">{user?.email}</span>
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-              <span className="text-sm font-medium text-primary">{user?.initials || 'U'}</span>
-            </div>
+            <span className="text-sm text-foreground">{user?.name}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer hover:bg-primary/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background">
+                  <span className="text-sm font-medium text-primary">{user?.initials || 'U'}</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-2 py-1.5 text-sm">
+                  <p className="font-medium">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/profile" className="flex items-center gap-2 cursor-pointer">
+                    <User className="w-4 h-4" />
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

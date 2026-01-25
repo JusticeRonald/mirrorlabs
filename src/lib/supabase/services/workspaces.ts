@@ -55,22 +55,32 @@ export async function getWorkspaces(type?: WorkspaceType): Promise<WorkspaceWith
   // Get member counts and project counts
   const workspacesWithCounts = await Promise.all(
     (workspaces || []).map(async (ws) => {
-      const [membersResult, projectsResult] = await Promise.all([
-        supabase
-          .from('workspace_members')
-          .select('id', { count: 'exact', head: true })
-          .eq('workspace_id', ws.id),
-        supabase
-          .from('projects')
-          .select('id', { count: 'exact', head: true })
-          .eq('workspace_id', ws.id),
-      ]);
+      try {
+        const [membersResult, projectsResult] = await Promise.all([
+          supabase
+            .from('workspace_members')
+            .select('id', { count: 'exact', head: true })
+            .eq('workspace_id', ws.id),
+          supabase
+            .from('projects')
+            .select('id', { count: 'exact', head: true })
+            .eq('workspace_id', ws.id),
+        ]);
 
-      return {
-        ...ws,
-        member_count: membersResult.count || 0,
-        project_count: projectsResult.count || 0,
-      };
+        return {
+          ...ws,
+          member_count: membersResult.count || 0,
+          project_count: projectsResult.count || 0,
+        };
+      } catch (error) {
+        // If enrichment fails for a workspace, return it with zero counts
+        console.error(`Error enriching workspace ${ws.id}:`, error);
+        return {
+          ...ws,
+          member_count: 0,
+          project_count: 0,
+        };
+      }
     })
   );
 
@@ -115,7 +125,8 @@ export async function getWorkspaceById(workspaceId: string): Promise<WorkspaceWi
   return {
     ...ws,
     members: (members || []).map((m) => ({
-      profile: m.profile as unknown as Profile,
+      // Supabase returns profile as array due to join, take first element
+      profile: (Array.isArray(m.profile) ? m.profile[0] : m.profile) as Profile,
       role: m.role,
     })),
     projects: projects || [],
@@ -204,7 +215,8 @@ export async function getWorkspaceMembers(
   }
 
   return (data || []).map((m) => ({
-    profile: m.profile as unknown as Profile,
+    // Supabase returns profile as array due to join, take first element
+    profile: (Array.isArray(m.profile) ? m.profile[0] : m.profile) as Profile,
     role: m.role,
   }));
 }

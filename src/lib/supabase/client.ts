@@ -19,6 +19,7 @@ export const supabase = createClient<Database>(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
+      storageKey: 'mirrorlabs-auth-storage',  // Explicit key to prevent conflicts
     },
   }
 );

@@ -33,5 +33,18 @@ The viewer supports loading and displaying Gaussian Splat files with:
 - Role-based tool permissions (measure, annotate, export, share)
 - Toolbar with navigation, measurement, and annotation tools
 
-## Phase 1 Note
-Visual reference only. No auth, no backend. 3D viewer loads local demo splat files.
+## Current State
+Fully functional platform with:
+- **Authentication**: Supabase email/password auth with demo mode fallback
+- **3D Viewer**: Gaussian Splat rendering with PLY, SPZ, SPLAT, KSPLAT support
+- **Backend**: Supabase (PostgreSQL + Storage + Realtime)
+- **Demo Mode**: Works without Supabase configuration using mock data
+
+## Environment Setup
+Copy `.env.example` to `.env` and add your Supabase credentials:
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+Without Supabase configured, the app runs in demo mode with mock data.

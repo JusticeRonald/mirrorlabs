@@ -9,6 +9,8 @@ import {
   Users,
   Calendar,
   ArrowUpRight,
+  List,
+  LayoutList,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,10 +36,13 @@ import { AdminLayout } from '@/components/admin';
 import { getWorkspaces, createWorkspace, type WorkspaceWithCounts } from '@/lib/supabase/services/workspaces';
 import { useToast } from '@/hooks/use-toast';
 
+type ViewMode = 'list' | 'compact';
+
 const AdminWorkspaces = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceWithCounts[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newWorkspaceSlug, setNewWorkspaceSlug] = useState('');
@@ -137,54 +142,76 @@ const AdminWorkspaces = () => {
           />
         </div>
 
-        {/* Add Workspace */}
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Workspace
+        <div className="flex items-center gap-2">
+          {/* View Toggle */}
+          <div className="flex items-center gap-1 mr-2">
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setViewMode('list')}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Workspace</DialogTitle>
-              <DialogDescription>
-                Create a new workspace for a customer. They'll be able to have projects and team members.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Workspace Name</Label>
-                <Input
-                  id="name"
-                  placeholder="Acme Corporation"
-                  value={newWorkspaceName}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="slug">Slug</Label>
-                <Input
-                  id="slug"
-                  placeholder="acme-corp"
-                  value={newWorkspaceSlug}
-                  onChange={(e) => setNewWorkspaceSlug(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  URL-friendly identifier for the workspace
-                </p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Cancel
+            <Button
+              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setViewMode('compact')}
+              title="Compact view"
+            >
+              <LayoutList className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Add Workspace */}
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Workspace
               </Button>
-              <Button onClick={handleCreateWorkspace} disabled={isCreating}>
-                {isCreating ? 'Creating...' : 'Create Workspace'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Workspace</DialogTitle>
+                <DialogDescription>
+                  Create a new workspace for a customer. They'll be able to have projects and team members.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Workspace Name</Label>
+                  <Input
+                    id="name"
+                    placeholder="Acme Corporation"
+                    value={newWorkspaceName}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="slug">Slug</Label>
+                  <Input
+                    id="slug"
+                    placeholder="acme-corp"
+                    value={newWorkspaceSlug}
+                    onChange={(e) => setNewWorkspaceSlug(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    URL-friendly identifier for the workspace
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateWorkspace} disabled={isCreating}>
+                  {isCreating ? 'Creating...' : 'Create Workspace'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Subheader */}
@@ -192,7 +219,7 @@ const AdminWorkspaces = () => {
         Manage customer workspaces and their projects
       </p>
 
-      {/* Workspaces Grid - Compact 4-column layout */}
+      {/* Workspaces Display */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -215,69 +242,130 @@ const AdminWorkspaces = () => {
             )}
           </CardContent>
         </Card>
+      ) : viewMode === 'list' ? (
+        /* List View - Single column, horizontal cards with more info */
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-3">
+              {filteredWorkspaces.map((ws) => (
+                <div
+                  key={ws.id}
+                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-lg font-semibold text-primary">
+                      {getInitials(ws.name)}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium truncate">{ws.name}</h3>
+                      <span className="text-xs text-muted-foreground">/{ws.slug}</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <FolderOpen className="w-4 h-4" />
+                        {ws.project_count} projects
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Users className="w-4 h-4" />
+                        {ws.member_count} members
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(ws.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/admin/workspaces/${ws.id}`}>
+                        View
+                        <ArrowUpRight className="w-4 h-4 ml-1" />
+                      </Link>
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link to={`/admin/workspaces/${ws.id}`}>View Details</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>Edit</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredWorkspaces.map((ws) => (
-            <Card key={ws.id} className="group hover:border-primary/50 transition-colors">
-              <CardContent className="pt-4 pb-3">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    {/* Workspace initials */}
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-semibold text-primary">
+        /* Compact View - Table-style rows, maximum density */
+        <Card>
+          <CardContent className="pt-4 pb-2">
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="col-span-5">Workspace</div>
+              <div className="col-span-2 text-center">Projects</div>
+              <div className="col-span-2 text-center">Members</div>
+              <div className="col-span-2">Updated</div>
+              <div className="col-span-1"></div>
+            </div>
+            {/* Table Rows */}
+            <div className="divide-y divide-border">
+              {filteredWorkspaces.map((ws) => (
+                <Link
+                  key={ws.id}
+                  to={`/admin/workspaces/${ws.id}`}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                >
+                  <div className="col-span-5 flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-semibold text-primary">
                         {getInitials(ws.name)}
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-medium text-sm truncate">{ws.name}</h3>
-                      <p className="text-xs text-muted-foreground truncate">/{ws.slug}</p>
+                      <p className="text-sm font-medium truncate">{ws.name}</p>
                     </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link to={`/admin/workspaces/${ws.id}`}>View Details</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                {/* Stats row */}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                  <div className="flex items-center gap-1">
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    <span>{ws.project_count}</span>
+                  <div className="col-span-2 text-center text-sm text-muted-foreground">
+                    {ws.project_count}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5" />
-                    <span>{ws.member_count}</span>
+                  <div className="col-span-2 text-center text-sm text-muted-foreground">
+                    {ws.member_count}
                   </div>
-                </div>
-
-                {/* View button */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-between h-8 text-xs group-hover:bg-muted"
-                  asChild
-                >
-                  <Link to={`/admin/workspaces/${ws.id}`}>
-                    View Details
-                    <ArrowUpRight className="w-3.5 h-3.5" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  <div className="col-span-2 text-sm text-muted-foreground">
+                    {new Date(ws.updated_at).toLocaleDateString()}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link to={`/admin/workspaces/${ws.id}`}>View Details</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>Edit</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </AdminLayout>
   );

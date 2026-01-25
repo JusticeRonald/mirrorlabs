@@ -40,7 +40,24 @@
       "Bash(cd C:UsersJustice RonaldDocumentsMirror LabsWebApp)",
       "Bash(npm run dev:*)",
       "Bash(timeout:*)",
-      "Bash(git worktree:*)"
+      "Bash(git worktree:*)",
+      "Bash(git pull:*)",
+      "Skill(frontend-design)",
+      "Skill(canvas-design)",
+      "Bash(npm run lint)",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "Bash(git merge:*)",
+      "Bash(xargs ls:*)",
+      "Bash(find:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(echo:*)",
+      "Bash(cd:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(playwright install:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Justice Ronald\\\\Documents\\\\Mirror Labs\\\\Repo\\\\Dev1\" log --oneline -10)",
+      "Bash(git cherry-pick:*)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   PlayCircle,
@@ -10,8 +10,13 @@ import {
   Archive,
   Eye,
   Calendar,
+  Search,
+  List,
+  LayoutList,
+  Database,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   DropdownMenu,
@@ -22,14 +27,23 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { AdminLayout } from '@/components/admin';
-import { mockProjects } from '@/data/mockProjects';
+import { useDemoProjects, DEMO_WORKSPACE_ID } from '@/hooks/useProjects';
 
-// Demo projects from the mock data (would be from Demo organization in production)
-const demoProjects = mockProjects;
+type ViewMode = 'list' | 'compact';
 
 const AdminDemo = () => {
-  const [projects, setProjects] = useState(demoProjects);
-  const [isLoading, setIsLoading] = useState(false);
+  const { projects, isLoading, isUsingMockData, refetch } = useDemoProjects();
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter projects by search
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      p.industry.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [projects, searchQuery]);
 
   // Calculate stats
   const totalProjects = projects.length;
@@ -47,8 +61,20 @@ const AdminDemo = () => {
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <PlayCircle className="w-5 h-5 text-primary" />
             </div>
-            <div>
-              <h3 className="font-medium mb-1">Demo Content Management</h3>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-medium">Demo Content Management</h3>
+                {isUsingMockData ? (
+                  <Badge variant="secondary" className="text-xs">
+                    Mock Data
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs border-green-500/30 text-green-600">
+                    <Database className="w-3 h-3 mr-1" />
+                    Supabase
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">
                 Manage the projects and scans that appear on the public demo page.
                 These projects are visible to all visitors without authentication.
@@ -100,124 +126,203 @@ const AdminDemo = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-lg font-semibold">Demo Projects</h2>
-        <Button>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Demo Project
-        </Button>
+      <div className="flex flex-col sm:flex-row gap-4 justify-between mb-6">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search demo projects..."
+            className="pl-10"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {/* View Toggle */}
+          <div className="flex items-center gap-1 mr-2">
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setViewMode('list')}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setViewMode('compact')}
+              title="Compact view"
+            >
+              <LayoutList className="w-4 h-4" />
+            </Button>
+          </div>
+          <Button>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Demo Project
+          </Button>
+        </div>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects Display */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
         </div>
-      ) : projects.length === 0 ? (
+      ) : filteredProjects.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <PlayCircle className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No demo projects</h3>
+            <h3 className="text-lg font-medium mb-2">
+              {searchQuery ? 'No matching projects' : 'No demo projects'}
+            </h3>
             <p className="text-muted-foreground text-center mb-4">
-              Add projects to showcase on the public demo page.
+              {searchQuery
+                ? 'No projects match your search.'
+                : 'Add projects to showcase on the public demo page.'}
             </p>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Demo Project
-            </Button>
+            {!searchQuery && (
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Demo Project
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : viewMode === 'list' ? (
+        /* List View */
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-3">
+              {filteredProjects.map((project) => (
+                <div
+                  key={project.id}
+                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                >
+                  <div className="w-32 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-muted">
+                    {project.thumbnail && (
+                      <img
+                        src={project.thumbnail}
+                        alt={project.name}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium truncate">{project.name}</h3>
+                      <Badge variant="secondary" className="text-xs">
+                        {project.industry}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
+                      {project.description}
+                    </p>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Scan className="w-4 h-4" />
+                        {project.scans.length} scans
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(project.updatedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/projects/${project.id}`}>
+                        <Eye className="w-4 h-4 mr-1" />
+                        View
+                      </Link>
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>Edit Details</DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Scan
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive">
+                          <Archive className="w-4 h-4 mr-2" />
+                          Remove from Demo
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <Card key={project.id} className="group overflow-hidden">
-              {/* Thumbnail */}
-              <div className="aspect-video relative overflow-hidden bg-muted">
-                <img
-                  src={project.thumbnail}
-                  alt={project.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-
-                {/* Badge */}
-                <div className="absolute top-2 left-2">
-                  <Badge variant="secondary" className="bg-black/40 backdrop-blur-sm text-white border-0">
-                    {project.industry}
-                  </Badge>
-                </div>
-
-                {/* Scan Count */}
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-white/90 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-md">
-                  <Scan className="w-3 h-3" />
-                  {project.scans.length}
-                </div>
-              </div>
-
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base">{project.name}</CardTitle>
-                    <CardDescription className="line-clamp-2 mt-1">
-                      {project.description}
-                    </CardDescription>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link to={`/projects/${project.id}`}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Project
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>Edit Details</DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Scan
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">
-                        <Archive className="w-4 h-4 mr-2" />
-                        Remove from Demo
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-
-              <CardContent className="pt-0">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Calendar className="w-3 h-3" />
-                  <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
-                </div>
-
-                {/* Scans Preview */}
-                {project.scans.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <p className="text-xs text-muted-foreground mb-2">Scans:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {project.scans.slice(0, 3).map((scan) => (
-                        <Badge key={scan.id} variant="outline" className="text-xs">
-                          {scan.name}
-                        </Badge>
-                      ))}
-                      {project.scans.length > 3 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{project.scans.length - 3} more
-                        </Badge>
+        /* Compact View */
+        <Card>
+          <CardContent className="pt-4 pb-2">
+            <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="col-span-5">Project</div>
+              <div className="col-span-2">Industry</div>
+              <div className="col-span-2 text-center">Scans</div>
+              <div className="col-span-2">Updated</div>
+              <div className="col-span-1"></div>
+            </div>
+            <div className="divide-y divide-border">
+              {filteredProjects.map((project) => (
+                <Link
+                  key={project.id}
+                  to={`/projects/${project.id}`}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                >
+                  <div className="col-span-5 flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0 bg-muted">
+                      {project.thumbnail && (
+                        <img
+                          src={project.thumbnail}
+                          alt={project.name}
+                          className="w-full h-full object-cover"
+                        />
                       )}
                     </div>
+                    <span className="text-sm font-medium truncate">{project.name}</span>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  <div className="col-span-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {project.industry}
+                    </Badge>
+                  </div>
+                  <div className="col-span-2 text-center text-sm text-muted-foreground">
+                    {project.scans.length}
+                  </div>
+                  <div className="col-span-2 text-sm text-muted-foreground">
+                    {new Date(project.updatedAt).toLocaleDateString()}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link to={`/projects/${project.id}`}>View Project</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>Edit Details</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive">Remove from Demo</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Instructions Card */}

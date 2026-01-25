@@ -21,7 +21,7 @@ const AccessDeniedRedirect = () => {
     });
   }, [toast]);
 
-  return <Navigate to="/portfolio" replace />;
+  return <Navigate to="/projects" replace />;
 };
 
 /**

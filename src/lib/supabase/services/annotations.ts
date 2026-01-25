@@ -306,6 +306,9 @@ export async function reorderWaypoints(
     sort_order: index,
   }));
 
+  // Collect errors but continue processing all updates
+  const errors: string[] = [];
+
   for (const update of updates) {
     const { error } = await supabase
       .from('camera_waypoints')
@@ -313,8 +316,12 @@ export async function reorderWaypoints(
       .eq('id', update.id);
 
     if (error) {
-      return { error: new Error(error.message) };
+      errors.push(`Waypoint ${update.id}: ${error.message}`);
     }
+  }
+
+  if (errors.length > 0) {
+    return { error: new Error(`Failed to reorder some waypoints: ${errors.join('; ')}`) };
   }
 
   return { error: null };

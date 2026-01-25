@@ -9,6 +9,8 @@ import {
   Mail,
   Calendar,
   Building2,
+  List,
+  LayoutList,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { AdminLayout } from '@/components/admin';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { Profile } from '@/lib/supabase/database.types';
-import { getWorkspaces, type WorkspaceWithCounts } from '@/lib/supabase/services/workspaces';
+import { getWorkspaces, getOrganizations, type WorkspaceWithCounts, type OrganizationWithCounts } from '@/lib/supabase/services/workspaces';
 
 // Mock user-org mapping for demo mode
 const mockUserOrgs: Record<string, string[]> = {
@@ -45,6 +47,8 @@ interface UserWithDetails extends Profile {
   organizations?: OrganizationWithCounts[];
 }
 
+type ViewMode = 'list' | 'compact';
+
 const AdminUsers = () => {
   const [users, setUsers] = useState<UserWithDetails[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
@@ -52,6 +56,7 @@ const AdminUsers = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'staff' | 'client'>('all');
   const [filterClient, setFilterClient] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -238,7 +243,7 @@ const AdminUsers = () => {
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <Select value={filterClient} onValueChange={setFilterClient}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter by client" />
@@ -263,6 +268,26 @@ const AdminUsers = () => {
                 <SelectItem value="client">Clients Only</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* View Toggle */}
+            <div className="flex items-center gap-1 ml-2">
+              <Button
+                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={() => setViewMode('list')}
+                title="List view"
+              >
+                <List className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={() => setViewMode('compact')}
+                title="Compact view"
+              >
+                <LayoutList className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -282,7 +307,8 @@ const AdminUsers = () => {
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : viewMode === 'list' ? (
+        /* List View - Detailed card rows */
         <Card>
           <CardContent className="pt-6">
             <div className="space-y-3">
@@ -358,6 +384,71 @@ const AdminUsers = () => {
                       <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        /* Compact View - Table-style rows */
+        <Card>
+          <CardContent className="pt-4 pb-2">
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+              <div className="col-span-4">Name</div>
+              <div className="col-span-3">Email</div>
+              <div className="col-span-2">Type</div>
+              <div className="col-span-2">Joined</div>
+              <div className="col-span-1"></div>
+            </div>
+            {/* Table Rows */}
+            <div className="divide-y divide-border">
+              {filteredUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                >
+                  <div className="col-span-4 flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-semibold text-primary">
+                        {user.initials || user.name?.substring(0, 2).toUpperCase() || 'U'}
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium truncate">{user.name || 'Unnamed User'}</span>
+                  </div>
+                  <div className="col-span-3 text-sm text-muted-foreground truncate">
+                    {user.email}
+                  </div>
+                  <div className="col-span-2">
+                    {user.is_staff ? (
+                      <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs">
+                        Staff
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs">Client</Badge>
+                    )}
+                  </div>
+                  <div className="col-span-2 text-sm text-muted-foreground">
+                    {new Date(user.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>View Profile</DropdownMenuItem>
+                        <DropdownMenuItem>View Organizations</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem>
+                          {user.is_staff ? 'Remove Staff Access' : 'Grant Staff Access'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
             </div>
