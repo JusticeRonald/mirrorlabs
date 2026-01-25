@@ -9,6 +9,8 @@ import {
   Calendar,
   MoreHorizontal,
   ArrowUpRight,
+  List,
+  LayoutList,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,13 +23,52 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { AdminLayout } from '@/components/admin';
+import { AdminLayout, ProjectPreviewPanel } from '@/components/admin';
 import { getWorkspaceById, type WorkspaceWithDetails } from '@/lib/supabase/services/workspaces';
+import type { IndustryType } from '@/lib/supabase/database.types';
+
+// Project type for preview panel (maps workspace project to panel format)
+interface PreviewProject {
+  id: string;
+  name: string;
+  description: string;
+  thumbnail: string;
+  industry: IndustryType;
+  scanCount: number;
+  isArchived: boolean;
+  updatedAt: string;
+  workspaceId?: string;
+  scans: Array<{ id: string }>;
+}
 
 const AdminWorkspaceDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [workspace, setWorkspace] = useState<WorkspaceWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [projectViewMode, setProjectViewMode] = useState<'list' | 'compact'>('compact');
+  const [memberViewMode, setMemberViewMode] = useState<'list' | 'compact'>('compact');
+
+  // Preview panel state
+  const [selectedProject, setSelectedProject] = useState<PreviewProject | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Convert workspace project to preview panel format
+  const handleProjectClick = (project: WorkspaceWithDetails['projects'][0]) => {
+    const previewProject: PreviewProject = {
+      id: project.id,
+      name: project.name,
+      description: project.description || '',
+      thumbnail: project.thumbnail_url || '/placeholder.svg',
+      industry: project.industry,
+      scanCount: 0, // Will be loaded in the panel
+      isArchived: project.is_archived,
+      updatedAt: project.updated_at,
+      workspaceId: workspace?.id,
+      scans: [],
+    };
+    setSelectedProject(previewProject);
+    setPreviewOpen(true);
+  };
 
   useEffect(() => {
     const fetchWorkspace = async () => {
@@ -171,74 +212,201 @@ const AdminWorkspaceDetail = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {workspace.projects.map((project) => (
-                <Card key={project.id} className="group hover:border-primary/50 transition-colors">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        {project.thumbnail_url ? (
-                          <img
-                            src={project.thumbnail_url}
-                            alt={project.name}
-                            className="w-10 h-10 rounded-lg object-cover"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                            <FolderOpen className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        )}
-                        <div>
-                          <CardTitle className="text-base">{project.name}</CardTitle>
-                          <CardDescription className="line-clamp-1">
-                            {project.description || 'No description'}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link to={`/projects/${project.id}`}>View Project</Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>Edit</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                      <Badge variant="outline" className="text-xs">
-                        {project.industry}
-                      </Badge>
-                      {project.is_archived && (
-                        <Badge variant="secondary" className="text-xs">Archived</Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      className="w-full mt-3 justify-between"
-                      asChild
+            <>
+              {/* View Toggle */}
+              <div className="flex justify-end mb-4">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant={projectViewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setProjectViewMode('list')}
+                    title="List view"
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={projectViewMode === 'compact' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setProjectViewMode('compact')}
+                    title="Compact view"
+                  >
+                    <LayoutList className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {projectViewMode === 'list' ? (
+                /* List View - Card Grid */
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {workspace.projects.map((project) => (
+                    <Card
+                      key={project.id}
+                      onClick={() => handleProjectClick(project)}
+                      className="group hover:border-primary/50 transition-colors cursor-pointer"
                     >
-                      <Link to={`/projects/${project.id}`}>
-                        Open Project
-                        <ArrowUpRight className="w-4 h-4" />
-                      </Link>
-                    </Button>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            {project.thumbnail_url ? (
+                              <img
+                                src={project.thumbnail_url}
+                                alt={project.name}
+                                className="w-10 h-10 rounded-lg object-cover"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                                <FolderOpen className="w-5 h-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div>
+                              <CardTitle className="text-base">{project.name}</CardTitle>
+                              <CardDescription className="line-clamp-1">
+                                {project.description || 'No description'}
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    to={`/admin/projects/${project.id}`}
+                                    state={{
+                                      from: 'workspace',
+                                      workspaceId: workspace.id,
+                                      workspaceName: workspace.name
+                                    }}
+                                  >
+                                    View Project
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>Edit</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                          <Badge variant="outline" className="text-xs">
+                            {project.industry}
+                          </Badge>
+                          {project.is_archived && (
+                            <Badge variant="secondary" className="text-xs">Archived</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          <span>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          className="w-full mt-3 justify-between"
+                          onClick={(e) => e.stopPropagation()}
+                          asChild
+                        >
+                          <Link
+                            to={`/admin/projects/${project.id}`}
+                            state={{
+                              from: 'workspace',
+                              workspaceId: workspace.id,
+                              workspaceName: workspace.name
+                            }}
+                          >
+                            Open Project
+                            <ArrowUpRight className="w-4 h-4" />
+                          </Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                /* Compact View - Table-style rows */
+                <Card>
+                  <CardContent className="pt-4 pb-2">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                      <div className="col-span-5">Project</div>
+                      <div className="col-span-2">Industry</div>
+                      <div className="col-span-3">Updated</div>
+                      <div className="col-span-2"></div>
+                    </div>
+                    {/* Table Rows */}
+                    <div className="divide-y divide-border">
+                      {workspace.projects.map((project) => (
+                        <div
+                          key={project.id}
+                          onClick={() => handleProjectClick(project)}
+                          className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors cursor-pointer"
+                        >
+                          <div className="col-span-5 flex items-center gap-3 min-w-0">
+                            {project.thumbnail_url ? (
+                              <img
+                                src={project.thumbnail_url}
+                                alt={project.name}
+                                className="w-10 h-7 rounded object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span className="text-sm font-medium truncate">{project.name}</span>
+                              {project.is_archived && (
+                                <Badge variant="secondary" className="text-xs shrink-0">Archived</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="col-span-2">
+                            <Badge variant="outline" className="text-xs">
+                              {project.industry}
+                            </Badge>
+                          </div>
+                          <div className="col-span-3 text-sm text-muted-foreground">
+                            {new Date(project.updated_at).toLocaleDateString()}
+                          </div>
+                          <div className="col-span-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    to={`/admin/projects/${project.id}`}
+                                    state={{
+                                      from: 'workspace',
+                                      workspaceId: workspace.id,
+                                      workspaceName: workspace.name
+                                    }}
+                                  >
+                                    View Project
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>Edit</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -259,50 +427,141 @@ const AdminWorkspaceDetail = () => {
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-4">
-                  {workspace.members.map(({ profile, role }) => (
-                    <div
-                      key={profile.id}
-                      className="flex items-center justify-between p-3 rounded-lg border border-border"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {profile.initials || profile.name?.substring(0, 2).toUpperCase() || 'U'}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="font-medium">{profile.name || 'Unnamed User'}</p>
-                          <p className="text-sm text-muted-foreground">{profile.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={role === 'owner' ? 'default' : 'secondary'}>
-                          {role}
-                        </Badge>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem>Change Role</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive">Remove</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  ))}
+            <>
+              {/* View Toggle */}
+              <div className="flex justify-end mb-4">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant={memberViewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setMemberViewMode('list')}
+                    title="List view"
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={memberViewMode === 'compact' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setMemberViewMode('compact')}
+                    title="Compact view"
+                  >
+                    <LayoutList className="w-4 h-4" />
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+
+              {memberViewMode === 'list' ? (
+                /* List View - Bordered Cards */
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      {workspace.members.map(({ profile, role }) => (
+                        <div
+                          key={profile.id}
+                          className="flex items-center justify-between p-3 rounded-lg border border-border"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-sm font-medium text-primary">
+                                {profile.initials || profile.name?.substring(0, 2).toUpperCase() || 'U'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="font-medium">{profile.name || 'Unnamed User'}</p>
+                              <p className="text-sm text-muted-foreground">{profile.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Badge variant={role === 'owner' ? 'default' : 'secondary'}>
+                              {role}
+                            </Badge>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem>Change Role</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Remove</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                /* Compact View - Table-style rows */
+                <Card>
+                  <CardContent className="pt-4 pb-2">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                      <div className="col-span-6">Member</div>
+                      <div className="col-span-3">Role</div>
+                      <div className="col-span-3"></div>
+                    </div>
+                    {/* Table Rows */}
+                    <div className="divide-y divide-border">
+                      {workspace.members.map(({ profile, role }) => (
+                        <div
+                          key={profile.id}
+                          className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="col-span-6 flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-medium text-primary">
+                                {profile.initials || profile.name?.substring(0, 2).toUpperCase() || 'U'}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{profile.name || 'Unnamed User'}</p>
+                              <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
+                            </div>
+                          </div>
+                          <div className="col-span-3">
+                            <Badge variant={role === 'owner' ? 'default' : 'secondary'} className="text-xs">
+                              {role}
+                            </Badge>
+                          </div>
+                          <div className="col-span-3 flex justify-end">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem>Change Role</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Remove</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Project Preview Panel */}
+      <ProjectPreviewPanel
+        project={selectedProject}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        navigationState={{
+          from: 'workspace',
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        }}
+      />
     </AdminLayout>
   );
 };

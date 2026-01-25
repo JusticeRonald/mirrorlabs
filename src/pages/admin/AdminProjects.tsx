@@ -7,10 +7,10 @@ import {
   Building2,
   Calendar,
   ArrowUpRight,
-  List,
-  LayoutList,
   FileStack,
   Archive,
+  Scan,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AdminLayout } from '@/components/admin';
+import { ViewModeToggle } from '@/components/ui/view-mode-toggle';
+import { AdminLayout, ProjectPreviewPanel } from '@/components/admin';
+import { useViewPreference } from '@/hooks/useViewPreference';
+import type { ProjectListViewMode } from '@/types/preferences';
 import { mockProjects, type Project } from '@/data/mockProjects';
 import { getOrganizations, type OrganizationWithCounts } from '@/lib/supabase/services/workspaces';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -61,6 +64,7 @@ interface AdminProject {
   thumbnail: string;
   industry: 'construction' | 'real-estate' | 'cultural';
   scanCount: number;
+  memberCount: number;
   isArchived: boolean;
   updatedAt: string;
   workspaceId?: string;
@@ -72,7 +76,6 @@ interface ProjectWithOrg extends Project {
   organization?: OrganizationWithCounts;
 }
 
-type ViewMode = 'list' | 'compact';
 type SortBy = 'updated' | 'name' | 'scans';
 
 const industryLabels: Record<string, string> = {
@@ -96,7 +99,17 @@ const AdminProjects = () => {
   const [filterIndustry, setFilterIndustry] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'archived'>('all');
   const [sortBy, setSortBy] = useState<SortBy>('updated');
-  const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  const [viewMode, setViewMode] = useViewPreference('admin-projects');
+
+  // Preview panel state
+  const [selectedProject, setSelectedProject] = useState<AdminProject | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Handle project row click - opens preview panel
+  const handleProjectClick = (project: AdminProject) => {
+    setSelectedProject(project);
+    setPreviewOpen(true);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -113,7 +126,8 @@ const AdminProjects = () => {
           .from('projects')
           .select(`
             *,
-            scans (id)
+            scans (id),
+            project_members (user_id)
           `)
           .neq('workspace_id', DEMO_WORKSPACE_ID)
           .order('updated_at', { ascending: false });
@@ -128,6 +142,7 @@ const AdminProjects = () => {
             thumbnail: p.thumbnail,
             industry: p.industry,
             scanCount: p.scanCount,
+            memberCount: p.members.length,
             isArchived: p.isArchived,
             updatedAt: p.updatedAt,
             organization: orgs.find(org => org.id === projectOrgMap[p.id]),
@@ -135,13 +150,14 @@ const AdminProjects = () => {
           })));
         } else {
           // Map Supabase projects to AdminProject format
-          const adminProjects: AdminProject[] = (data || []).map((p: ProjectWithMembers & { scans: { id: string }[] }) => ({
+          const adminProjects: AdminProject[] = (data || []).map((p: ProjectWithMembers & { scans: { id: string }[]; project_members: { user_id: string }[] }) => ({
             id: p.id,
             name: p.name,
             description: p.description || '',
             thumbnail: p.thumbnail_url || '/placeholder.svg',
             industry: p.industry,
             scanCount: p.scans?.length || 0,
+            memberCount: p.project_members?.length || 0,
             isArchived: p.is_archived,
             updatedAt: p.updated_at,
             workspaceId: p.workspace_id,
@@ -159,6 +175,7 @@ const AdminProjects = () => {
           thumbnail: p.thumbnail,
           industry: p.industry,
           scanCount: p.scanCount,
+          memberCount: p.members.length,
           isArchived: p.isArchived,
           updatedAt: p.updatedAt,
           organization: orgs.find(org => org.id === projectOrgMap[p.id]),
@@ -239,14 +256,11 @@ const AdminProjects = () => {
     if (firstScan) {
       return `/viewer/${project.id}/${firstScan.id}`;
     }
-    return `/projects/${project.id}`;
+    return `/admin/projects/${project.id}`;
   };
 
   return (
-    <AdminLayout
-      title="Projects"
-      breadcrumbs={[{ label: 'Projects' }]}
-    >
+    <AdminLayout title="Projects">
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3 mb-6">
         <Card>
@@ -305,24 +319,7 @@ const AdminProjects = () => {
           </div>
 
           {/* View Toggle */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('list')}
-              title="List view"
-            >
-              <List className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('compact')}
-              title="Compact view"
-            >
-              <LayoutList className="w-4 h-4" />
-            </Button>
-          </div>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
         </div>
 
         {/* Filter Row */}
@@ -392,6 +389,69 @@ const AdminProjects = () => {
             </p>
           </CardContent>
         </Card>
+      ) : viewMode === 'grid' ? (
+        /* Grid View - Card layout */
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredProjects.map((project) => (
+            <div
+              key={project.id}
+              onClick={() => handleProjectClick(project)}
+              className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300 cursor-pointer"
+            >
+              {/* Thumbnail */}
+              <div className="aspect-video relative overflow-hidden bg-muted">
+                <img
+                  src={project.thumbnail}
+                  alt={project.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                {/* Industry Badge */}
+                <div className="absolute top-2 left-2">
+                  <Badge className={`${industryColors[project.industry]} text-xs`}>
+                    {industryLabels[project.industry]}
+                  </Badge>
+                </div>
+
+                {/* Archived Badge */}
+                {project.isArchived && (
+                  <div className="absolute top-2 right-2">
+                    <Badge variant="secondary" className="text-xs">
+                      <Archive className="w-3 h-3 mr-1" />
+                      Archived
+                    </Badge>
+                  </div>
+                )}
+
+                {/* Scan Count */}
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-white/90 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-md">
+                  <Scan className="w-3 h-3" />
+                  {project.scanCount}
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-4">
+                <h3 className="font-medium text-foreground line-clamp-1">{project.name}</h3>
+                <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                  {project.description}
+                </p>
+
+                <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Building2 className="w-3 h-3" />
+                    <span className="truncate max-w-[100px]">{project.organization?.name || '-'}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>{new Date(project.updatedAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : viewMode === 'list' ? (
         /* List View */
         <Card>
@@ -400,7 +460,8 @@ const AdminProjects = () => {
               {filteredProjects.map((project) => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                  onClick={() => handleProjectClick(project)}
+                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   {/* Thumbnail */}
                   <div className="w-20 h-14 rounded-md overflow-hidden flex-shrink-0">
@@ -427,7 +488,10 @@ const AdminProjects = () => {
                         {industryLabels[project.industry]}
                       </Badge>
                       {project.organization && (
-                        <Link to={`/admin/clients/${project.organization.id}`}>
+                        <Link
+                          to={`/admin/workspaces/${project.organization.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Badge variant="outline" className="text-xs cursor-pointer hover:bg-muted">
                             <Building2 className="w-3 h-3 mr-1" />
                             {project.organization.name}
@@ -439,6 +503,10 @@ const AdminProjects = () => {
                         {project.scanCount} scans
                       </span>
                       <span className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        {project.memberCount} members
+                      </span>
+                      <span className="text-sm text-muted-foreground flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
                         {new Date(project.updatedAt).toLocaleDateString()}
                       </span>
@@ -446,7 +514,7 @@ const AdminProjects = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" asChild>
                       <Link to={getViewerLink(project)}>
                         Open Viewer
@@ -461,7 +529,12 @@ const AdminProjects = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
-                          <Link to={`/projects/${project.id}`}>View Details</Link>
+                          <Link
+                            to={`/admin/projects/${project.id}`}
+                            state={{ from: 'projects' }}
+                          >
+                            View Details
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem>
@@ -485,16 +558,17 @@ const AdminProjects = () => {
               <div className="col-span-2">Industry</div>
               <div className="col-span-2">Client</div>
               <div className="col-span-1 text-center">Scans</div>
-              <div className="col-span-2">Updated</div>
+              <div className="col-span-1 text-center">Members</div>
+              <div className="col-span-1">Updated</div>
               <div className="col-span-1"></div>
             </div>
             {/* Table Rows */}
             <div className="divide-y divide-border">
               {filteredProjects.map((project) => (
-                <Link
+                <div
                   key={project.id}
-                  to={getViewerLink(project)}
-                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                  onClick={() => handleProjectClick(project)}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   <div className="col-span-4 flex items-center gap-3 min-w-0">
                     <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0">
@@ -525,12 +599,15 @@ const AdminProjects = () => {
                   <div className="col-span-1 text-center text-sm text-muted-foreground">
                     {project.scanCount}
                   </div>
-                  <div className="col-span-2 text-sm text-muted-foreground">
+                  <div className="col-span-1 text-center text-sm text-muted-foreground">
+                    {project.memberCount}
+                  </div>
+                  <div className="col-span-1 text-sm text-muted-foreground">
                     {new Date(project.updatedAt).toLocaleDateString()}
                   </div>
-                  <div className="col-span-1 flex justify-end">
+                  <div className="col-span-1 flex justify-end" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                      <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7">
                           <MoreHorizontal className="w-4 h-4" />
                         </Button>
@@ -540,7 +617,12 @@ const AdminProjects = () => {
                           <Link to={getViewerLink(project)}>Open Viewer</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <Link to={`/projects/${project.id}`}>View Details</Link>
+                          <Link
+                            to={`/admin/projects/${project.id}`}
+                            state={{ from: 'projects' }}
+                          >
+                            View Details
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem>
@@ -549,12 +631,20 @@ const AdminProjects = () => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Project Preview Panel */}
+      <ProjectPreviewPanel
+        project={selectedProject}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        navigationState={{ from: 'projects' }}
+      />
     </AdminLayout>
   );
 };

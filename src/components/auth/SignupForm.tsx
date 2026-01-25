@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SignupFormProps {
-  onSuccess: () => void;
+  onSuccess: (email: string) => void;
 }
 
 export function SignupForm({ onSuccess }: SignupFormProps) {
@@ -44,7 +44,7 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
       return;
     }
 
-    onSuccess();
+    onSuccess(email);
   };
 
   return (

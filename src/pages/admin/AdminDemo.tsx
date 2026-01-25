@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { AdminLayout } from '@/components/admin';
+import { AdminLayout, ProjectPreviewPanel, type BaseProjectInfo } from '@/components/admin';
 import { useDemoProjects, DEMO_WORKSPACE_ID } from '@/hooks/useProjects';
 
 type ViewMode = 'list' | 'compact';
@@ -35,6 +35,10 @@ const AdminDemo = () => {
   const { projects, isLoading, isUsingMockData, refetch } = useDemoProjects();
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Preview panel state
+  const [selectedProject, setSelectedProject] = useState<BaseProjectInfo | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Filter projects by search
   const filteredProjects = useMemo(() => {
@@ -49,11 +53,28 @@ const AdminDemo = () => {
   const totalProjects = projects.length;
   const totalScans = projects.reduce((acc, p) => acc + p.scans.length, 0);
 
+  // Convert demo project to BaseProjectInfo format
+  const toBaseProjectInfo = (project: typeof projects[0]): BaseProjectInfo => ({
+    id: project.id,
+    name: project.name,
+    description: project.description || '',
+    thumbnail: project.thumbnail || '/placeholder.svg',
+    industry: project.industry,
+    scanCount: project.scans.length,
+    isArchived: false, // Demo projects are not archived
+    updatedAt: project.updatedAt,
+    scans: project.scans.map(s => ({ id: s.id })),
+  });
+
+  // Handle project click - open preview panel
+  const handleProjectClick = (project: typeof projects[0], e: React.MouseEvent) => {
+    e.preventDefault();
+    setSelectedProject(toBaseProjectInfo(project));
+    setPreviewOpen(true);
+  };
+
   return (
-    <AdminLayout
-      title="Demo Content"
-      breadcrumbs={[{ label: 'Demo Content' }]}
-    >
+    <AdminLayout title="Demo Content">
       {/* Info Banner */}
       <Card className="mb-6 bg-primary/5 border-primary/20">
         <CardContent className="pt-6">
@@ -196,7 +217,8 @@ const AdminDemo = () => {
               {filteredProjects.map((project) => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                  onClick={(e) => handleProjectClick(project, e)}
+                  className="flex items-center gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   <div className="w-32 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-muted">
                     {project.thumbnail && (
@@ -230,7 +252,7 @@ const AdminDemo = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/projects/${project.id}`}>
+                      <Link to={`/admin/projects/${project.id}`}>
                         <Eye className="w-4 h-4 mr-1" />
                         View
                       </Link>
@@ -273,10 +295,10 @@ const AdminDemo = () => {
             </div>
             <div className="divide-y divide-border">
               {filteredProjects.map((project) => (
-                <Link
+                <div
                   key={project.id}
-                  to={`/projects/${project.id}`}
-                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                  onClick={(e) => handleProjectClick(project, e)}
+                  className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   <div className="col-span-5 flex items-center gap-3 min-w-0">
                     <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0 bg-muted">
@@ -303,14 +325,14 @@ const AdminDemo = () => {
                   </div>
                   <div className="col-span-1 flex justify-end">
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-7 w-7">
                           <MoreHorizontal className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
-                          <Link to={`/projects/${project.id}`}>View Project</Link>
+                          <Link to={`/admin/projects/${project.id}`}>View Project</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem>Edit Details</DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -318,7 +340,7 @@ const AdminDemo = () => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -345,6 +367,14 @@ const AdminDemo = () => {
           </p>
         </CardContent>
       </Card>
+
+      {/* Project Preview Panel */}
+      <ProjectPreviewPanel
+        project={selectedProject}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        isAdmin={true}
+      />
     </AdminLayout>
   );
 };

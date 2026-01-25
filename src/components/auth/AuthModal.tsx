@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dialog,
@@ -20,15 +21,19 @@ interface AuthModalProps {
 
 export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const { loginAsDemo } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
 
   const handleDemoAccess = () => {
     loginAsDemo();
     onOpenChange(false);
+    navigate('/dashboard');
   };
 
-  const handleSuccess = () => {
+  const handleSuccess = (email: string) => {
+    const isStaffEmail = email.endsWith('@mirrorlabs3d.com');
     onOpenChange(false);
+    navigate(isStaffEmail ? '/admin' : '/dashboard');
   };
 
   return (

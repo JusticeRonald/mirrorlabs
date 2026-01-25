@@ -36,10 +36,11 @@ import type { Profile } from '@/lib/supabase/database.types';
 import { getWorkspaces, getOrganizations, type WorkspaceWithCounts, type OrganizationWithCounts } from '@/lib/supabase/services/workspaces';
 
 // Mock user-org mapping for demo mode
+// Maps user IDs to workspace IDs they belong to
 const mockUserOrgs: Record<string, string[]> = {
-  'user-1': [],  // Admin - no org
-  'user-2': ['org-1'],  // John Smith -> Apex Builders
-  'user-3': ['org-3'],  // Sarah Johnson -> City Arts Foundation
+  'user-1': [],
+  'user-2': ['ws-1'],
+  'user-3': ['ws-3'],
 };
 
 interface UserWithDetails extends Profile {
@@ -71,10 +72,10 @@ const AdminUsers = () => {
         const mockUsers: UserWithDetails[] = [
           {
             id: 'user-1',
-            email: 'admin@mirrorlabs3d.com',
-            name: 'Admin User',
+            email: 'john@mirrorlabs3d.com',
+            name: 'John Davis',
             avatar_url: null,
-            initials: 'AU',
+            initials: 'JD',
             account_type: 'staff',
             is_staff: true,
             created_at: '2024-01-01T00:00:00Z',
@@ -84,55 +85,55 @@ const AdminUsers = () => {
           },
           {
             id: 'user-2',
-            email: 'john@apexbuilders.com',
-            name: 'John Smith',
+            email: 'mary@mirrorlabs3d.com',
+            name: 'Mary Kim',
             avatar_url: null,
-            initials: 'JS',
-            account_type: 'client',
-            is_staff: false,
-            created_at: '2024-02-15T00:00:00Z',
-            updated_at: '2024-02-15T00:00:00Z',
+            initials: 'MK',
+            account_type: 'staff',
+            is_staff: true,
+            created_at: '2024-01-05T00:00:00Z',
+            updated_at: '2024-01-05T00:00:00Z',
             organization_count: 1,
             organizations: orgs.filter((o) => mockUserOrgs['user-2']?.includes(o.id)),
           },
           {
             id: 'user-3',
-            email: 'sarah@cityarts.org',
-            name: 'Sarah Johnson',
+            email: 'sarah@mirrorlabs3d.com',
+            name: 'Sarah Rodriguez',
             avatar_url: null,
-            initials: 'SJ',
-            account_type: 'client',
-            is_staff: false,
-            created_at: '2024-03-10T00:00:00Z',
-            updated_at: '2024-03-10T00:00:00Z',
+            initials: 'SR',
+            account_type: 'staff',
+            is_staff: true,
+            created_at: '2024-01-10T00:00:00Z',
+            updated_at: '2024-01-10T00:00:00Z',
             organization_count: 1,
             organizations: orgs.filter((o) => mockUserOrgs['user-3']?.includes(o.id)),
           },
           {
             id: 'user-4',
-            email: 'mike@metrorealty.com',
-            name: 'Mike Chen',
+            email: 'alex@mirrorlabs3d.com',
+            name: 'Alex Lee',
             avatar_url: null,
-            initials: 'MC',
-            account_type: 'client',
-            is_staff: false,
-            created_at: '2024-04-05T00:00:00Z',
-            updated_at: '2024-04-05T00:00:00Z',
-            organization_count: 1,
-            organizations: orgs.filter((o) => o.id === 'org-2'),
+            initials: 'AL',
+            account_type: 'staff',
+            is_staff: true,
+            created_at: '2024-01-15T00:00:00Z',
+            updated_at: '2024-01-15T00:00:00Z',
+            organization_count: 0,
+            organizations: [],
           },
           {
             id: 'user-5',
-            email: 'lisa@apexbuilders.com',
-            name: 'Lisa Rodriguez',
+            email: 'brian@mirrorlabs3d.com',
+            name: 'Brian Chen',
             avatar_url: null,
-            initials: 'LR',
-            account_type: 'client',
-            is_staff: false,
-            created_at: '2024-05-20T00:00:00Z',
-            updated_at: '2024-05-20T00:00:00Z',
-            organization_count: 1,
-            organizations: orgs.filter((o) => o.id === 'org-1'),
+            initials: 'BC',
+            account_type: 'staff',
+            is_staff: true,
+            created_at: '2024-01-20T00:00:00Z',
+            updated_at: '2024-01-20T00:00:00Z',
+            organization_count: 0,
+            organizations: [],
           },
         ];
         setUsers(mockUsers);
@@ -183,10 +184,7 @@ const AdminUsers = () => {
   const clientCount = users.filter((u) => !u.is_staff).length;
 
   return (
-    <AdminLayout
-      title="Users"
-      breadcrumbs={[{ label: 'Users' }]}
-    >
+    <AdminLayout title="People">
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3 mb-6">
         <Card>

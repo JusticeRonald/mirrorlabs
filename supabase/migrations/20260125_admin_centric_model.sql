@@ -11,6 +11,8 @@
 -- Staff: Gets personal workspace | Clients: Profile only, no workspace
 -- ============================================================================
 
+-- NOTE: Must use fully qualified names (public.table, public.function) because this
+-- trigger runs in auth schema context where 'public' is not in search_path
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -28,7 +30,7 @@ BEGIN
     NEW.id,
     NEW.email,
     user_name,
-    generate_initials(user_name),
+    public.generate_initials(user_name),  -- Must be fully qualified!
     CASE WHEN user_is_staff THEN 'staff' ELSE 'client' END,
     user_is_staff,
     NULL  -- No workspace initially
@@ -36,7 +38,7 @@ BEGIN
 
   -- Only staff gets a personal workspace
   IF user_is_staff THEN
-    INSERT INTO workspaces (name, slug, type, owner_id)
+    INSERT INTO public.workspaces (name, slug, type, owner_id)
     VALUES (
       user_name || '''s Workspace',
       'ws-' || replace(NEW.id::text, '-', ''),
@@ -44,10 +46,10 @@ BEGIN
       NEW.id
     ) RETURNING id INTO personal_ws_id;
 
-    INSERT INTO workspace_members (workspace_id, user_id, role)
+    INSERT INTO public.workspace_members (workspace_id, user_id, role)
     VALUES (personal_ws_id, NEW.id, 'owner');
 
-    UPDATE profiles SET primary_workspace_id = personal_ws_id WHERE id = NEW.id;
+    UPDATE public.profiles SET primary_workspace_id = personal_ws_id WHERE id = NEW.id;
   END IF;
 
   RETURN NEW;

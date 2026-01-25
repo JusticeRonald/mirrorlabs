@@ -9,6 +9,13 @@ import type {
   IndustryType,
 } from '../database.types';
 
+// Validate UUID format to prevent mock IDs from reaching PostgreSQL
+function isValidUUID(str: string): boolean {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 export interface ProjectsFilter {
   industry?: IndustryType;
   isArchived?: boolean;
@@ -58,7 +65,8 @@ export async function getProjects(filter?: ProjectsFilter): Promise<ProjectWithM
  * Get a single project by ID with all relations
  */
 export async function getProjectById(projectId: string): Promise<ProjectWithMembers | null> {
-  if (!isSupabaseConfigured()) {
+  // Return null if Supabase not configured OR projectId is not a valid UUID
+  if (!isSupabaseConfigured() || !isValidUUID(projectId)) {
     return null;
   }
 

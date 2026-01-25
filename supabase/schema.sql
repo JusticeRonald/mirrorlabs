@@ -501,7 +501,18 @@ CREATE POLICY "Measurements visible to project members"
 CREATE POLICY "Project editors can create measurements"
   ON measurements FOR INSERT
   TO authenticated
-  WITH CHECK (created_by = auth.uid());
+  WITH CHECK (
+    created_by = auth.uid()
+    AND scan_id IN (
+      SELECT s.id FROM scans s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.created_by = auth.uid()
+      UNION
+      SELECT s.id FROM scans s
+      JOIN project_members pm ON s.project_id = pm.project_id
+      WHERE pm.user_id = auth.uid() AND pm.role IN ('owner', 'editor')
+    )
+  );
 
 CREATE POLICY "Measurement creators can delete their measurements"
   ON measurements FOR DELETE
@@ -527,7 +538,18 @@ CREATE POLICY "Waypoints visible to project members"
 CREATE POLICY "Project editors can create waypoints"
   ON camera_waypoints FOR INSERT
   TO authenticated
-  WITH CHECK (created_by = auth.uid());
+  WITH CHECK (
+    created_by = auth.uid()
+    AND scan_id IN (
+      SELECT s.id FROM scans s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.created_by = auth.uid()
+      UNION
+      SELECT s.id FROM scans s
+      JOIN project_members pm ON s.project_id = pm.project_id
+      WHERE pm.user_id = auth.uid() AND pm.role IN ('owner', 'editor')
+    )
+  );
 
 CREATE POLICY "Waypoint creators can update their waypoints"
   ON camera_waypoints FOR UPDATE
@@ -699,6 +721,8 @@ CREATE POLICY "Staff can manage all memberships"
 -- Clients: Profile only - admin adds them to workspaces
 -- ============================================================================
 
+-- NOTE: Must use fully qualified names (public.table, public.function) because this
+-- trigger runs in auth schema context where 'public' is not in search_path
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -716,7 +740,7 @@ BEGIN
     NEW.id,
     NEW.email,
     user_name,
-    generate_initials(user_name),
+    public.generate_initials(user_name),  -- Must be fully qualified!
     CASE WHEN user_is_staff THEN 'staff' ELSE 'client' END,
     user_is_staff,
     NULL  -- No workspace initially
@@ -724,7 +748,7 @@ BEGIN
 
   -- Only staff gets a personal workspace
   IF user_is_staff THEN
-    INSERT INTO workspaces (name, slug, type, owner_id)
+    INSERT INTO public.workspaces (name, slug, type, owner_id)
     VALUES (
       user_name || '''s Workspace',
       'ws-' || replace(NEW.id::text, '-', ''),
@@ -732,10 +756,10 @@ BEGIN
       NEW.id
     ) RETURNING id INTO personal_ws_id;
 
-    INSERT INTO workspace_members (workspace_id, user_id, role)
+    INSERT INTO public.workspace_members (workspace_id, user_id, role)
     VALUES (personal_ws_id, NEW.id, 'owner');
 
-    UPDATE profiles SET primary_workspace_id = personal_ws_id WHERE id = NEW.id;
+    UPDATE public.profiles SET primary_workspace_id = personal_ws_id WHERE id = NEW.id;
   END IF;
 
   RETURN NEW;

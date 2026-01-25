@@ -9,6 +9,13 @@ import type {
   WorkspaceType,
 } from '../database.types';
 
+// Validate UUID format to prevent mock IDs from reaching PostgreSQL
+function isValidUUID(str: string): boolean {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 /**
  * Workspace with member count and project count
  */
@@ -182,16 +189,6 @@ export async function updateWorkspace(
 }
 
 /**
- * Archive a workspace (soft delete)
- * Note: This would require adding an is_archived field to workspaces table
- */
-export async function archiveWorkspace(workspaceId: string): Promise<{ error: Error | null }> {
-  // For now, we don't have an is_archived field, so this is a placeholder
-  console.warn('archiveWorkspace not fully implemented - needs schema update');
-  return { error: null };
-}
-
-/**
  * Get workspace members
  */
 export async function getWorkspaceMembers(
@@ -304,8 +301,8 @@ export const mockWorkspaces: WorkspaceWithCounts[] = [
     owner_id: 'user-2',
     created_at: '2024-01-15T00:00:00Z',
     updated_at: '2025-01-15T00:00:00Z',
-    member_count: 5,
-    project_count: 4, // proj-1, proj-2, proj-3, proj-4
+    member_count: 2,
+    project_count: 4,
   },
   {
     id: 'ws-2',
@@ -315,8 +312,8 @@ export const mockWorkspaces: WorkspaceWithCounts[] = [
     owner_id: 'user-4',
     created_at: '2024-02-01T00:00:00Z',
     updated_at: '2025-01-10T00:00:00Z',
-    member_count: 3,
-    project_count: 4, // proj-5, proj-6, proj-7, proj-8
+    member_count: 2,
+    project_count: 4,
   },
   {
     id: 'ws-3',
@@ -326,8 +323,8 @@ export const mockWorkspaces: WorkspaceWithCounts[] = [
     owner_id: 'user-3',
     created_at: '2024-03-10T00:00:00Z',
     updated_at: '2025-01-14T00:00:00Z',
-    member_count: 4,
-    project_count: 4, // proj-9, proj-10, proj-11, proj-12
+    member_count: 2,
+    project_count: 4,
   },
   {
     id: 'demo',
@@ -356,12 +353,12 @@ const mockWorkspaceMembers: Record<string, { profile: Profile; role: UserRole }[
     {
       profile: {
         id: 'user-2',
-        email: 'john@apexbuilders.com',
-        name: 'John Smith',
+        email: 'mary@mirrorlabs3d.com',
+        name: 'Mary Kim',
         avatar_url: null,
-        initials: 'JS',
-        account_type: 'client',
-        is_staff: false,
+        initials: 'MK',
+        account_type: 'staff',
+        is_staff: true,
         primary_workspace_id: 'ws-1',
         created_at: '2024-02-15T00:00:00Z',
         updated_at: '2024-02-15T00:00:00Z',
@@ -371,12 +368,12 @@ const mockWorkspaceMembers: Record<string, { profile: Profile; role: UserRole }[
     {
       profile: {
         id: 'user-5',
-        email: 'lisa@apexbuilders.com',
-        name: 'Lisa Rodriguez',
+        email: 'brian@mirrorlabs3d.com',
+        name: 'Brian Chen',
         avatar_url: null,
-        initials: 'LR',
-        account_type: 'client',
-        is_staff: false,
+        initials: 'BC',
+        account_type: 'staff',
+        is_staff: true,
         primary_workspace_id: 'ws-1',
         created_at: '2024-05-20T00:00:00Z',
         updated_at: '2024-05-20T00:00:00Z',
@@ -388,34 +385,64 @@ const mockWorkspaceMembers: Record<string, { profile: Profile; role: UserRole }[
     {
       profile: {
         id: 'user-4',
-        email: 'mike@metrorealty.com',
-        name: 'Mike Chen',
+        email: 'alex@mirrorlabs3d.com',
+        name: 'Alex Lee',
         avatar_url: null,
-        initials: 'MC',
-        account_type: 'client',
-        is_staff: false,
+        initials: 'AL',
+        account_type: 'staff',
+        is_staff: true,
         primary_workspace_id: 'ws-2',
         created_at: '2024-04-05T00:00:00Z',
         updated_at: '2024-04-05T00:00:00Z',
       },
       role: 'owner' as UserRole,
     },
+    {
+      profile: {
+        id: 'user-1',
+        email: 'john@mirrorlabs3d.com',
+        name: 'John Davis',
+        avatar_url: null,
+        initials: 'JD',
+        account_type: 'staff',
+        is_staff: true,
+        primary_workspace_id: null,
+        created_at: '2024-05-12T00:00:00Z',
+        updated_at: '2024-05-12T00:00:00Z',
+      },
+      role: 'editor' as UserRole,
+    },
   ],
   'ws-3': [
     {
       profile: {
         id: 'user-3',
-        email: 'sarah@cityarts.org',
-        name: 'Sarah Johnson',
+        email: 'sarah@mirrorlabs3d.com',
+        name: 'Sarah Rodriguez',
         avatar_url: null,
-        initials: 'SJ',
-        account_type: 'client',
-        is_staff: false,
+        initials: 'SR',
+        account_type: 'staff',
+        is_staff: true,
         primary_workspace_id: 'ws-3',
         created_at: '2024-03-10T00:00:00Z',
         updated_at: '2024-03-10T00:00:00Z',
       },
       role: 'owner' as UserRole,
+    },
+    {
+      profile: {
+        id: 'user-2',
+        email: 'mary@mirrorlabs3d.com',
+        name: 'Mary Kim',
+        avatar_url: null,
+        initials: 'MK',
+        account_type: 'staff',
+        is_staff: true,
+        primary_workspace_id: 'ws-1',
+        created_at: '2024-04-25T00:00:00Z',
+        updated_at: '2024-04-25T00:00:00Z',
+      },
+      role: 'editor' as UserRole,
     },
   ],
 };
@@ -438,13 +465,95 @@ function getMockWorkspaceById(workspaceId: string): WorkspaceWithDetails | null 
   };
 }
 
+/**
+ * Get workspaces where the specified user is a member
+ * Used for client sidebar to show their assigned workspaces
+ */
+export async function getUserWorkspaces(userId: string): Promise<WorkspaceWithCounts[]> {
+  // Return mock data if Supabase not configured OR userId is not a valid UUID (demo mode)
+  if (!isSupabaseConfigured() || !isValidUUID(userId)) {
+    return getMockUserWorkspaces(userId);
+  }
+
+  // Get workspace IDs where user is a member
+  const { data: memberships, error: membershipError } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', userId);
+
+  if (membershipError) {
+    console.error('Error fetching user workspace memberships:', membershipError);
+    return [];
+  }
+
+  if (!memberships || memberships.length === 0) {
+    return [];
+  }
+
+  const workspaceIds = memberships.map((m) => m.workspace_id);
+
+  // Fetch the workspaces
+  const { data: workspaces, error: workspacesError } = await supabase
+    .from('workspaces')
+    .select('*')
+    .in('id', workspaceIds)
+    .eq('type', 'business') // Only show business workspaces in client sidebar
+    .order('name', { ascending: true });
+
+  if (workspacesError) {
+    console.error('Error fetching user workspaces:', workspacesError);
+    return [];
+  }
+
+  // Enrich with counts
+  const workspacesWithCounts = await Promise.all(
+    (workspaces || []).map(async (ws) => {
+      try {
+        const [membersResult, projectsResult] = await Promise.all([
+          supabase
+            .from('workspace_members')
+            .select('id', { count: 'exact', head: true })
+            .eq('workspace_id', ws.id),
+          supabase
+            .from('projects')
+            .select('id', { count: 'exact', head: true })
+            .eq('workspace_id', ws.id),
+        ]);
+
+        return {
+          ...ws,
+          member_count: membersResult.count || 0,
+          project_count: projectsResult.count || 0,
+        };
+      } catch (error) {
+        console.error(`Error enriching workspace ${ws.id}:`, error);
+        return {
+          ...ws,
+          member_count: 0,
+          project_count: 0,
+        };
+      }
+    })
+  );
+
+  return workspacesWithCounts;
+}
+
+// Mock user workspaces for demo mode
+function getMockUserWorkspaces(userId: string): WorkspaceWithCounts[] {
+  // In demo mode, return a subset of business workspaces
+  // Simulating that the demo user has access to specific workspaces
+  return mockWorkspaces.filter(
+    (ws) => ws.type === 'business' && (ws.id === 'ws-1' || ws.id === 'ws-2')
+  );
+}
+
 // Legacy exports for backward compatibility
 export {
   getWorkspaces as getOrganizations,
   getWorkspaceById as getOrganizationById,
   createWorkspace as createOrganization,
   updateWorkspace as updateOrganization,
-  archiveWorkspace as archiveOrganization,
   getWorkspaceMembers as getOrganizationMembers,
   addWorkspaceMember as addOrganizationMember,
   removeWorkspaceMember as removeOrganizationMember,

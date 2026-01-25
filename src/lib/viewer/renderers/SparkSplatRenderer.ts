@@ -23,7 +23,6 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
   private clock: THREE.Clock;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
-    console.log('[SparkSplatRenderer] Constructor called');
     this.renderer = renderer;
     this.scene = scene;
     this.clock = new THREE.Clock();
@@ -31,20 +30,15 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
   }
 
   private initializeSparkRenderer(): void {
-    console.log('[SparkSplatRenderer] Initializing SparkRenderer...');
     // Create the Spark renderer with the WebGL renderer
     this.sparkRenderer = new SparkRendererCore({
       renderer: this.renderer,
       autoUpdate: true,
       premultipliedAlpha: true,
     });
-    console.log('[SparkSplatRenderer] SparkRendererCore created:', {
-      isValid: !!this.sparkRenderer,
-    });
 
     // Add the Spark renderer to the scene (it's a THREE.Mesh)
     this.scene.add(this.sparkRenderer);
-    console.log('[SparkSplatRenderer] SparkRenderer added to scene');
   }
 
   async loadFromUrl(
@@ -52,11 +46,9 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     onProgress?: (progress: SplatLoadProgress) => void
   ): Promise<SplatMetadata> {
     const startTime = performance.now();
-    console.log('[SparkSplatRenderer] Starting splat load from:', url);
 
     // Dispose of any existing splat mesh
     if (this.splatMesh) {
-      console.log('[SparkSplatRenderer] Disposing existing splat mesh');
       this.scene.remove(this.splatMesh);
       this.splatMesh.dispose();
       this.splatMesh = null;
@@ -64,18 +56,15 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
 
     // Determine file type from URL
     const fileType = this.getFileTypeFromUrl(url);
-    console.log('[SparkSplatRenderer] Detected file type:', fileType);
 
     // Track if an error occurred during loading
     let loadError: Error | null = null;
 
     // Create a new SplatMesh with the URL
-    console.log('[SparkSplatRenderer] Creating SplatMesh with options:', { url, fileType });
     this.splatMesh = new SplatMesh({
       url,
       fileType,
       onLoad: () => {
-        console.log('[SparkSplatRenderer] onLoad callback fired - loading complete');
         // Loading complete - progress is 100%
         onProgress?.({
           loaded: 1,
@@ -84,13 +73,8 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
         });
       },
       onError: (error: unknown) => {
-        console.error('[SparkSplatRenderer] onError callback fired:', error);
         loadError = error instanceof Error ? error : new Error(String(error));
       },
-    });
-    console.log('[SparkSplatRenderer] SplatMesh created:', {
-      isValid: !!this.splatMesh,
-      isInitialized: this.splatMesh.isInitialized,
     });
 
     // Add the splat mesh to the scene
@@ -98,9 +82,6 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
 
     // Fix orientation: rotate 180 degrees around X-axis to correct upside-down splats
     // This compensates for coordinate system differences (SuperSplat/NeRF conventions vs Three.js)
-    this.splatMesh.rotation.x = Math.PI;
-
-    console.log('[SparkSplatRenderer] SplatMesh added to scene with orientation fix, total children:', this.scene.children.length);
 
     // Simulate progress while loading (since Spark doesn't expose download progress)
     let progressInterval: ReturnType<typeof setInterval> | undefined;
@@ -126,9 +107,7 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     );
 
     try {
-      console.log('[SparkSplatRenderer] Waiting for initialization (timeout:', timeoutMs / 1000, 'seconds)...');
       await Promise.race([this.splatMesh.initialized, timeoutPromise]);
-      console.log('[SparkSplatRenderer] Initialization promise resolved, isInitialized:', this.splatMesh.isInitialized);
     } finally {
       // Always clear the progress interval
       if (progressInterval) {
@@ -138,7 +117,6 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
 
     // Check if an error occurred during loading
     if (loadError) {
-      console.error('[SparkSplatRenderer] Load failed with error:', loadError);
       throw loadError;
     }
 
@@ -146,26 +124,6 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     const loadTimeMs = performance.now() - startTime;
     const boundingBox = this.splatMesh.getBoundingBox();
     const splatCount = this.splatMesh.packedSplats?.numSplats ?? 0;
-
-    console.log('[SparkSplatRenderer] Load complete:', {
-      splatCount,
-      loadTimeMs: Math.round(loadTimeMs),
-      boundingBox: boundingBox ? {
-        min: boundingBox.min.toArray(),
-        max: boundingBox.max.toArray(),
-      } : null,
-      isInitialized: this.splatMesh.isInitialized,
-    });
-
-    // Validate that splats were actually loaded
-    if (splatCount === 0) {
-      console.warn('[SparkSplatRenderer] Warning: Splat file loaded but splatCount is 0');
-    }
-
-    // Validate bounding box - if empty or invalid, create a default one
-    if (!boundingBox || boundingBox.isEmpty()) {
-      console.warn('[SparkSplatRenderer] Warning: Bounding box is empty, using default bounds');
-    }
 
     this.metadata = {
       splatCount,

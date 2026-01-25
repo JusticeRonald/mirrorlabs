@@ -88,15 +88,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
 
 // Mock users for the demo
 export const mockUsers: User[] = [
-  { id: 'user-1', name: 'John Davis', email: 'john@mirrorlabs.com', initials: 'JD' },
-  { id: 'user-2', name: 'Mary Kim', email: 'mary@mirrorlabs.com', initials: 'MK' },
-  { id: 'user-3', name: 'Sarah Rodriguez', email: 'sarah@mirrorlabs.com', initials: 'SR' },
-  { id: 'user-4', name: 'Alex Lee', email: 'alex@mirrorlabs.com', initials: 'AL' },
-  { id: 'user-5', name: 'Brian Chen', email: 'brian@mirrorlabs.com', initials: 'BC' },
-  { id: 'user-6', name: 'Diana Martinez', email: 'diana@mirrorlabs.com', initials: 'DM' },
-  { id: 'user-7', name: 'Lisa Park', email: 'lisa@mirrorlabs.com', initials: 'LP' },
-  { id: 'user-8', name: 'Robert Mitchell', email: 'robert@mirrorlabs.com', initials: 'RM' },
-  { id: 'user-9', name: 'Tom Collins', email: 'tom@mirrorlabs.com', initials: 'TC' },
-  { id: 'user-10', name: 'Emily Stone', email: 'emily@mirrorlabs.com', initials: 'ES' },
+  { id: 'user-1', name: 'John Davis', email: 'john@mirrorlabs3d.com', initials: 'JD' },
+  { id: 'user-2', name: 'Mary Kim', email: 'mary@mirrorlabs3d.com', initials: 'MK' },
+  { id: 'user-3', name: 'Sarah Rodriguez', email: 'sarah@mirrorlabs3d.com', initials: 'SR' },
+  { id: 'user-4', name: 'Alex Lee', email: 'alex@mirrorlabs3d.com', initials: 'AL' },
+  { id: 'user-5', name: 'Brian Chen', email: 'brian@mirrorlabs3d.com', initials: 'BC' },
 ];
 

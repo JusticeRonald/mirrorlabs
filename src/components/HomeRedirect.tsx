@@ -7,7 +7,7 @@ import Index from "@/pages/Index";
  *
  * Redirects authenticated users to their appropriate dashboard:
  * - Staff: /admin
- * - Clients: /projects
+ * - Clients: /dashboard
  *
  * Shows the marketing landing page for unauthenticated users.
  */
@@ -25,7 +25,7 @@ const HomeRedirect = () => {
 
   // Redirect logged-in users to their dashboard
   if (isLoggedIn) {
-    return <Navigate to={isStaff ? "/admin" : "/projects"} replace />;
+    return <Navigate to={isStaff ? "/admin" : "/dashboard"} replace />;
   }
 
   // Show marketing page for unauthenticated users

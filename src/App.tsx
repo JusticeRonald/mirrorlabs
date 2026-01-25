@@ -11,6 +11,8 @@ import Product from "./pages/Product";
 import UseCasesPage from "./pages/UseCasesPage";
 import Contact from "./pages/Contact";
 import Demo from "./pages/Demo";
+import Dashboard from "./pages/Dashboard";
+import Workspaces from "./pages/Workspaces";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import ViewerPage from "./pages/ViewerPage";
@@ -24,6 +26,7 @@ import {
   AdminWorkspaces,
   AdminWorkspaceDetail,
   AdminProjects,
+  AdminProjectDetail,
   AdminUsers,
   AdminDemo,
 } from "./pages/admin";
@@ -46,6 +49,8 @@ const App = () => (
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/demo" element={<Demo />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/workspaces" element={<Workspaces />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />} />
             <Route path="/viewer/:projectId/:scanId" element={<ViewerPage />} />
@@ -56,6 +61,7 @@ const App = () => (
             <Route path="/admin/workspaces" element={<AdminGuard><AdminWorkspaces /></AdminGuard>} />
             <Route path="/admin/workspaces/:id" element={<AdminGuard><AdminWorkspaceDetail /></AdminGuard>} />
             <Route path="/admin/projects" element={<AdminGuard><AdminProjects /></AdminGuard>} />
+            <Route path="/admin/projects/:id" element={<AdminGuard><AdminProjectDetail /></AdminGuard>} />
             <Route path="/admin/people" element={<AdminGuard><AdminUsers /></AdminGuard>} />
             <Route path="/admin/demo" element={<AdminGuard><AdminDemo /></AdminGuard>} />
             <Route path="*" element={<NotFound />} />

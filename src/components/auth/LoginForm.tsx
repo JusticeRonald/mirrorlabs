@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface LoginFormProps {
-  onSuccess: () => void;
+  onSuccess: (email: string) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -27,7 +27,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       setError(authError.message);
       setIsLoading(false);
     } else {
-      onSuccess();
+      onSuccess(email);
     }
   };
 

@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import AppLayout from '@/components/AppLayout';
+import ClientLayout from '@/components/ClientLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { mockProjects, getOwnedProjects, getSharedProjects } from '@/data/mockProjects';
 
@@ -45,8 +45,8 @@ const Profile = () => {
   }
 
   return (
-    <AppLayout>
-      <div className="container max-w-4xl mx-auto px-6 py-8">
+    <ClientLayout>
+      <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Back Link */}
         <Link
           to="/projects"
@@ -338,7 +338,7 @@ const Profile = () => {
             </TabsContent>
           </Tabs>
         </div>
-    </AppLayout>
+    </ClientLayout>
   );
 };
 

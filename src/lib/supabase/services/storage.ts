@@ -95,6 +95,10 @@ export async function uploadScanFile(
 
   const filePath = generateFilePath(projectId, file.name);
 
+  // Get current session token for authenticated uploads
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
   // Upload using XMLHttpRequest for progress tracking
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
@@ -139,7 +143,7 @@ export async function uploadScanFile(
     });
 
     xhr.open('POST', storageUrl);
-    xhr.setRequestHeader('Authorization', `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.send(file);
   });

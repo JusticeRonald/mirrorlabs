@@ -18,6 +18,7 @@ export interface Project {
   description: string;
   thumbnail: string;
   industry: 'construction' | 'real-estate' | 'cultural';
+  workspaceId: string; // Links to workspace for filtering
   createdAt: string;
   updatedAt: string;
   scanCount: number;
@@ -38,13 +39,14 @@ const createMembers = (userIds: string[], roles: UserRole[]): ProjectMember[] =>
 };
 
 export const mockProjects: Project[] = [
-  // Construction Projects
+  // Construction Projects (Apex Builders - ws-1)
   {
     id: "proj-1",
     name: "Downtown Office Tower",
     description: "45-story commercial tower with MEP coordination and structural documentation",
     thumbnail: "https://images.unsplash.com/photo-1486718448742-163732cd1544?w=400&h=300&fit=crop",
     industry: 'construction',
+    workspaceId: 'ws-1',
     createdAt: "2024-12-01",
     updatedAt: "2025-01-15",
     scanCount: 12,
@@ -91,13 +93,14 @@ export const mockProjects: Project[] = [
     description: "Critical care expansion with specialized equipment coordination",
     thumbnail: "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=400&h=300&fit=crop",
     industry: 'construction',
+    workspaceId: 'ws-1',
     createdAt: "2024-11-15",
     updatedAt: "2025-01-12",
     scanCount: 8,
     collaborators: ["BC", "DM"],
     isArchived: false,
     userRole: 'editor',
-    members: createMembers(['user-5', 'user-1', 'user-6'], ['owner', 'editor', 'viewer']),
+    members: createMembers(['user-5', 'user-1', 'user-2'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-2-1",
@@ -127,13 +130,14 @@ export const mockProjects: Project[] = [
     description: "Retail podium with residential tower above",
     thumbnail: "https://images.unsplash.com/photo-1486325212027-8081e485255e?w=400&h=300&fit=crop",
     industry: 'construction',
+    workspaceId: 'ws-1',
     createdAt: "2024-10-20",
     updatedAt: "2025-01-10",
     scanCount: 15,
     collaborators: ["LP", "RM", "TC"],
     isArchived: false,
     userRole: 'viewer',
-    members: createMembers(['user-7', 'user-8', 'user-1'], ['owner', 'editor', 'viewer']),
+    members: createMembers(['user-1', 'user-2', 'user-3'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-3-1",
@@ -163,13 +167,14 @@ export const mockProjects: Project[] = [
     description: "500,000 sq ft distribution center with dock facilities",
     thumbnail: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&h=300&fit=crop",
     industry: 'construction',
+    workspaceId: 'ws-1',
     createdAt: "2024-08-15",
     updatedAt: "2024-11-20",
     scanCount: 6,
     collaborators: ["JD", "TC"],
     isArchived: true,
     userRole: 'owner',
-    members: createMembers(['user-1', 'user-9'], ['owner', 'editor']),
+    members: createMembers(['user-1', 'user-5'], ['owner', 'editor']),
     scans: [
       {
         id: "scan-4-1",
@@ -184,20 +189,21 @@ export const mockProjects: Project[] = [
     ],
   },
 
-  // Real Estate Projects
+  // Real Estate Projects (Metro Realty Group - ws-2)
   {
     id: "proj-5",
     name: "Luxury Penthouse Listing",
     description: "High-end residential property with panoramic views",
     thumbnail: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&h=300&fit=crop",
     industry: 'real-estate',
+    workspaceId: 'ws-2',
     createdAt: "2025-01-05",
     updatedAt: "2025-01-14",
     scanCount: 4,
     collaborators: ["ES", "KN"],
     isArchived: false,
     userRole: 'owner',
-    members: createMembers(['user-1', 'user-10'], ['owner', 'editor']),
+    members: createMembers(['user-1', 'user-4', 'user-5'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-5-1",
@@ -237,13 +243,14 @@ export const mockProjects: Project[] = [
     description: "Class A office building available for lease",
     thumbnail: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=400&h=300&fit=crop",
     industry: 'real-estate',
+    workspaceId: 'ws-2',
     createdAt: "2024-12-15",
     updatedAt: "2025-01-08",
     scanCount: 6,
     collaborators: ["PL", "JH"],
     isArchived: false,
     userRole: 'editor',
-    members: createMembers(['user-7', 'user-1'], ['owner', 'editor']),
+    members: createMembers(['user-4', 'user-1', 'user-2'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-6-1",
@@ -273,6 +280,7 @@ export const mockProjects: Project[] = [
     description: "Prime location retail space in shopping district",
     thumbnail: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400&h=300&fit=crop",
     industry: 'real-estate',
+    workspaceId: 'ws-2',
     createdAt: "2024-11-20",
     updatedAt: "2025-01-02",
     scanCount: 3,
@@ -299,13 +307,14 @@ export const mockProjects: Project[] = [
     description: "Renovated 1890s townhouse in heritage district",
     thumbnail: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400&h=300&fit=crop",
     industry: 'real-estate',
+    workspaceId: 'ws-2',
     createdAt: "2024-09-10",
     updatedAt: "2024-10-15",
     scanCount: 5,
     collaborators: ["ES"],
     isArchived: true,
     userRole: 'owner',
-    members: createMembers(['user-1', 'user-10'], ['owner', 'viewer']),
+    members: createMembers(['user-1', 'user-4'], ['owner', 'viewer']),
     scans: [
       {
         id: "scan-8-1",
@@ -320,20 +329,21 @@ export const mockProjects: Project[] = [
     ],
   },
 
-  // Cultural & Hospitality Projects
+  // Cultural & Hospitality Projects (City Arts Foundation - ws-3)
   {
     id: "proj-9",
     name: "Contemporary Art Museum",
     description: "Exhibition space documentation for virtual tours",
     thumbnail: "https://images.unsplash.com/photo-1577083552431-6e5fd01988ec?w=400&h=300&fit=crop",
     industry: 'cultural',
+    workspaceId: 'ws-3',
     createdAt: "2025-01-02",
     updatedAt: "2025-01-14",
     scanCount: 8,
     collaborators: ["SR", "LP"],
     isArchived: false,
     userRole: 'editor',
-    members: createMembers(['user-3', 'user-1', 'user-7'], ['owner', 'editor', 'viewer']),
+    members: createMembers(['user-3', 'user-1', 'user-2'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-9-1",
@@ -373,13 +383,14 @@ export const mockProjects: Project[] = [
     description: "Historic property restoration and modernization",
     thumbnail: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400&h=300&fit=crop",
     industry: 'cultural',
+    workspaceId: 'ws-3',
     createdAt: "2024-11-10",
     updatedAt: "2025-01-06",
     scanCount: 10,
     collaborators: ["MK", "JD", "ES"],
     isArchived: false,
     userRole: 'owner',
-    members: createMembers(['user-1', 'user-2', 'user-10'], ['owner', 'editor', 'viewer']),
+    members: createMembers(['user-1', 'user-2', 'user-3'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-10-1",
@@ -409,13 +420,14 @@ export const mockProjects: Project[] = [
     description: "1920s theater preservation and acoustic documentation",
     thumbnail: "https://images.unsplash.com/photo-1503095396549-807759245b35?w=400&h=300&fit=crop",
     industry: 'cultural',
+    workspaceId: 'ws-3',
     createdAt: "2024-09-20",
     updatedAt: "2024-12-15",
     scanCount: 12,
     collaborators: ["TC", "RM"],
     isArchived: false,
     userRole: 'viewer',
-    members: createMembers(['user-9', 'user-8', 'user-1'], ['owner', 'editor', 'viewer']),
+    members: createMembers(['user-3', 'user-5', 'user-1'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-11-1",
@@ -445,13 +457,14 @@ export const mockProjects: Project[] = [
     description: "Live music venue acoustic and spatial documentation",
     thumbnail: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=400&h=300&fit=crop",
     industry: 'cultural',
+    workspaceId: 'ws-3',
     createdAt: "2024-06-15",
     updatedAt: "2024-08-20",
     scanCount: 4,
     collaborators: ["RM"],
     isArchived: true,
     userRole: 'owner',
-    members: createMembers(['user-1', 'user-8'], ['owner', 'editor']),
+    members: createMembers(['user-1', 'user-3', 'user-5'], ['owner', 'editor', 'viewer']),
     scans: [
       {
         id: "scan-12-1",

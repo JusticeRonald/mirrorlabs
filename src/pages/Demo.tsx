@@ -15,9 +15,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ViewModeToggle } from "@/components/ui/view-mode-toggle";
 import { getProjectsByIndustry, featuredProject, featuredScan, type Project } from "@/data/mockProjects";
-import { Building2, Home, Landmark, Layers } from "lucide-react";
+import { Building2, Home, Landmark, Layers, Calendar, Scan, Users } from "lucide-react";
 import { useScrollAnimation, useStaggerAnimation } from "@/hooks/use-scroll-animation";
+import { useViewPreference } from "@/hooks/useViewPreference";
+import type { ProjectListViewMode } from "@/types/preferences";
 
 // Demo placeholder data to show what the full viewer experience looks like
 const demoMeasurements: Measurement[] = [
@@ -89,6 +92,7 @@ const industryConfig = {
 
 const Demo = () => {
   const [activeTab, setActiveTab] = useState<IndustryTab>("construction");
+  const [projectViewMode, setProjectViewMode] = useViewPreference('demo');
   const [isLoading, setIsLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState<SplatLoadProgress | null>(null);
   const [loadError, setLoadError] = useState<SplatLoadError | null>(null);
@@ -263,6 +267,11 @@ const Demo = () => {
             </p>
           </div>
 
+          {/* View Mode Toggle */}
+          <div className="flex justify-center mb-6">
+            <ViewModeToggle value={projectViewMode} onChange={setProjectViewMode} />
+          </div>
+
           {/* Industry Tabs */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as IndustryTab)} className="mb-8">
             <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-3 bg-card border border-border">
@@ -290,58 +299,162 @@ const Demo = () => {
             </div>
 
             <TabsContent value={activeTab} className="mt-0">
-              <div ref={galleryRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {currentProjects.map((project, index) => (
-                  <Card
-                    key={project.id}
-                    style={staggerDelays[index]?.style || {}}
-                    className={`group bg-card border-border hover:border-primary/30 transition-all duration-300 card-lift overflow-hidden ${galleryVisible ? 'opacity-100 translate-y-0 animate-tilt-in' : 'opacity-0 translate-y-10'
-                      }`}
-                  >
-                    <CardContent className="p-0">
-                      {/* Thumbnail */}
-                      <div className="aspect-video relative overflow-hidden">
-                        <img
-                          src={project.thumbnail}
-                          alt={project.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent opacity-60" />
-                        <div className="absolute top-3 right-3">
-                          <Badge className="bg-card/80 text-foreground border-border text-xs">
-                            {project.scans.length} {project.scans.length === 1 ? 'scan' : 'scans'}
-                          </Badge>
+              {currentProjects.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-muted-foreground text-lg">No projects found for this category.</p>
+                </div>
+              ) : projectViewMode === 'grid' ? (
+                /* Grid View */
+                <div ref={galleryRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {currentProjects.map((project, index) => (
+                    <Card
+                      key={project.id}
+                      style={staggerDelays[index]?.style || {}}
+                      className={`group bg-card border-border hover:border-primary/30 transition-all duration-300 card-lift overflow-hidden ${galleryVisible ? 'opacity-100 translate-y-0 animate-tilt-in' : 'opacity-0 translate-y-10'
+                        }`}
+                    >
+                      <CardContent className="p-0">
+                        {/* Thumbnail */}
+                        <div className="aspect-video relative overflow-hidden">
+                          <img
+                            src={project.thumbnail}
+                            alt={project.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent opacity-60" />
+                          <div className="absolute top-3 right-3">
+                            <Badge className="bg-card/80 text-foreground border-border text-xs">
+                              {project.scans.length} {project.scans.length === 1 ? 'scan' : 'scans'}
+                            </Badge>
+                          </div>
+                          {/* Scan count badge */}
+                          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/80 text-xs">
+                            <Layers className="w-3 h-3 text-primary" />
+                            <span className="text-foreground">{project.scanCount} captures</span>
+                          </div>
                         </div>
-                        {/* Scan count badge */}
-                        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/80 text-xs">
-                          <Layers className="w-3 h-3 text-primary" />
-                          <span className="text-foreground">{project.scanCount} captures</span>
-                        </div>
-                      </div>
 
-                      {/* Info */}
-                      <div className="p-4">
-                        <h3 className="text-foreground font-semibold mb-1 group-hover:text-primary transition-colors line-clamp-1">
-                          {project.name}
-                        </h3>
-                        <p className="text-muted-foreground text-sm mb-3 line-clamp-2">{project.description}</p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full border-border text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
-                          onClick={() => handleViewProject(project)}
-                        >
-                          View Project
-                        </Button>
+                        {/* Info */}
+                        <div className="p-4">
+                          <h3 className="text-foreground font-semibold mb-1 group-hover:text-primary transition-colors line-clamp-1">
+                            {project.name}
+                          </h3>
+                          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">{project.description}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-border text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                            onClick={() => handleViewProject(project)}
+                          >
+                            View Project
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : projectViewMode === 'list' ? (
+                /* List View */
+                <div ref={galleryRef} className={`space-y-3 ${galleryVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'} transition-all duration-700`}>
+                  {currentProjects.map((project) => (
+                    <Card
+                      key={project.id}
+                      className="group bg-card border-border hover:border-primary/30 transition-all duration-300"
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={project.thumbnail}
+                            alt={project.name}
+                            className="w-24 h-16 rounded-lg object-cover flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-foreground font-semibold group-hover:text-primary transition-colors truncate">
+                              {project.name}
+                            </h3>
+                            <p className="text-muted-foreground text-sm truncate">{project.description}</p>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Scan className="w-3 h-3" />
+                                {project.scans.length} scans
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Users className="w-3 h-3" />
+                                {project.members.length} members
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(project.updatedAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-border text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors shrink-0"
+                            onClick={() => handleViewProject(project)}
+                          >
+                            View Project
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                /* Compact View */
+                <div ref={galleryRef} className={`${galleryVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'} transition-all duration-700`}>
+                  <Card className="bg-card border-border">
+                    <CardContent className="pt-4 pb-2">
+                      {/* Table Header */}
+                      <div className="grid grid-cols-12 gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                        <div className="col-span-4">Project</div>
+                        <div className="col-span-2">Industry</div>
+                        <div className="col-span-1 text-center">Scans</div>
+                        <div className="col-span-2 text-center">Members</div>
+                        <div className="col-span-3"></div>
+                      </div>
+                      {/* Table Rows */}
+                      <div className="divide-y divide-border">
+                        {currentProjects.map((project) => (
+                          <div
+                            key={project.id}
+                            className="grid grid-cols-12 gap-4 px-3 py-2.5 items-center hover:bg-muted/50 transition-colors"
+                          >
+                            <div className="col-span-4 flex items-center gap-3 min-w-0">
+                              <img
+                                src={project.thumbnail}
+                                alt={project.name}
+                                className="w-10 h-7 rounded object-cover flex-shrink-0"
+                              />
+                              <span className="text-sm font-medium truncate">{project.name}</span>
+                            </div>
+                            <div className="col-span-2">
+                              <Badge variant="outline" className="text-xs">
+                                {industryConfig[project.industry]?.label || project.industry}
+                              </Badge>
+                            </div>
+                            <div className="col-span-1 text-center text-sm text-muted-foreground">
+                              {project.scans.length}
+                            </div>
+                            <div className="col-span-2 text-center text-sm text-muted-foreground">
+                              {project.members.length}
+                            </div>
+                            <div className="col-span-3 flex justify-end">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-primary hover:text-primary-foreground hover:bg-primary"
+                                onClick={() => handleViewProject(project)}
+                              >
+                                View Project
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </CardContent>
                   </Card>
-                ))}
-              </div>
-
-              {currentProjects.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-muted-foreground text-lg">No projects found for this category.</p>
                 </div>
               )}
             </TabsContent>

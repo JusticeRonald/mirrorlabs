@@ -252,8 +252,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const updateProfile = async (updates: Partial<Profile>): Promise<{ error: Error | null }> => {
+    // Filter out restricted fields to prevent privilege escalation
+    const { is_staff: _staff, account_type: _type, id: _id, created_at: _created, ...safeUpdates } = updates;
+
     if (isDemoMode) {
-      setProfile(prev => prev ? { ...prev, ...updates } : null);
+      setProfile(prev => prev ? { ...prev, ...safeUpdates } : null);
       return { error: null };
     }
 
@@ -263,11 +266,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     const { error } = await supabase
       .from('profiles')
-      .update(updates)
+      .update(safeUpdates)
       .eq('id', session.user.id);
 
     if (!error) {
-      setProfile(prev => prev ? { ...prev, ...updates } : null);
+      setProfile(prev => prev ? { ...prev, ...safeUpdates } : null);
     }
 
     return { error: error ? new Error(error.message) : null };

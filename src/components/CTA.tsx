@@ -15,8 +15,7 @@ const CTA = ({ variant = 'full' }: CTAProps) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement email submission to backend
-    setEmail("");
+    // Email submission disabled - form is not functional yet
   };
 
   // Minimal variant - just a button
@@ -124,10 +123,11 @@ const CTA = ({ variant = 'full' }: CTAProps) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+              disabled
+              className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <Button type="submit" variant="hero" size="lg" className="flex-shrink-0">
-              Request Access
+            <Button type="submit" variant="hero" size="lg" className="flex-shrink-0" disabled>
+              Coming Soon
               <ArrowRight className="ml-1 w-4 h-4" />
             </Button>
           </form>

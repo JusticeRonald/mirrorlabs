@@ -9,8 +9,6 @@ import {
   Users,
   Calendar,
   ArrowUpRight,
-  List,
-  LayoutList,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,17 +30,17 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ViewModeToggle } from '@/components/ui/view-mode-toggle';
 import { AdminLayout } from '@/components/admin';
+import { useViewPreference } from '@/hooks/useViewPreference';
 import { getWorkspaces, createWorkspace, type WorkspaceWithCounts } from '@/lib/supabase/services/workspaces';
 import { useToast } from '@/hooks/use-toast';
-
-type ViewMode = 'list' | 'compact';
 
 const AdminWorkspaces = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceWithCounts[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  const [viewMode, setViewMode] = useViewPreference('admin-workspaces');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newWorkspaceSlug, setNewWorkspaceSlug] = useState('');
@@ -125,10 +123,7 @@ const AdminWorkspaces = () => {
   };
 
   return (
-    <AdminLayout
-      title="Workspaces"
-      breadcrumbs={[{ label: 'Workspaces' }]}
-    >
+    <AdminLayout title="Workspaces">
       {/* Header Actions */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between mb-6">
         {/* Search */}
@@ -144,23 +139,8 @@ const AdminWorkspaces = () => {
 
         <div className="flex items-center gap-2">
           {/* View Toggle */}
-          <div className="flex items-center gap-1 mr-2">
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('list')}
-              title="List view"
-            >
-              <List className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setViewMode('compact')}
-              title="Compact view"
-            >
-              <LayoutList className="w-4 h-4" />
-            </Button>
+          <div className="mr-2">
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
           </div>
 
           {/* Add Workspace */}
@@ -242,6 +222,52 @@ const AdminWorkspaces = () => {
             )}
           </CardContent>
         </Card>
+      ) : viewMode === 'grid' ? (
+        /* Grid View - Card layout */
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredWorkspaces.map((ws) => (
+            <Link
+              key={ws.id}
+              to={`/admin/workspaces/${ws.id}`}
+              className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300"
+            >
+              {/* Header */}
+              <div className="p-4 pb-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <span className="text-lg font-semibold text-primary">
+                      {getInitials(ws.name)}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                      {ws.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">/{ws.slug}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="p-4">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <FolderOpen className="w-4 h-4" />
+                    {ws.project_count} projects
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users className="w-4 h-4" />
+                    {ws.member_count} members
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(ws.updated_at).toLocaleDateString()}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
       ) : viewMode === 'list' ? (
         /* List View - Single column, horizontal cards with more info */
         <Card>

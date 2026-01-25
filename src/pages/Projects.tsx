@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FolderOpen,
   Archive,
   Plus,
   Search,
-  Grid3X3,
-  List,
   MoreHorizontal,
   Calendar,
   Users,
@@ -24,7 +22,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import RoleBadge from '@/components/ui/role-badge';
-import AppLayout from '@/components/AppLayout';
+import { ViewModeToggle } from '@/components/ui/view-mode-toggle';
+import ClientLayout from '@/components/ClientLayout';
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher';
 import CreateProjectModal from '@/components/CreateProjectModal';
 import {
@@ -35,17 +34,48 @@ import {
   getSharedProjects
 } from '@/data/mockProjects';
 import { useAuth } from '@/contexts/AuthContext';
+import { useViewPreference } from '@/hooks/useViewPreference';
+import { ProjectPreviewPanel, type BaseProjectInfo } from '@/components/admin';
+import type { ProjectListViewMode } from '@/types/preferences';
 
-type ViewMode = 'grid' | 'list';
 type FilterMode = 'all' | 'owned' | 'shared';
 
 const Projects = () => {
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [searchParams] = useSearchParams();
+  const [viewMode, setViewMode] = useViewPreference('projects');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { isStaff, user, permissions } = useAuth();
+
+  // Preview panel state
+  const [selectedProject, setSelectedProject] = useState<BaseProjectInfo | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Convert mock project to BaseProjectInfo format
+  const toBaseProjectInfo = useCallback((project: typeof mockProjects[0]): BaseProjectInfo => ({
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    thumbnail: project.thumbnail,
+    industry: project.industry,
+    scanCount: project.scans.length,
+    isArchived: project.isArchived,
+    updatedAt: project.updatedAt,
+    workspaceId: project.workspaceId,
+    scans: project.scans.map(s => ({ id: s.id })),
+  }), []);
+
+  // Handle project click - open preview panel
+  const handleProjectClick = useCallback((project: typeof mockProjects[0], e: React.MouseEvent) => {
+    e.preventDefault();
+    setSelectedProject(toBaseProjectInfo(project));
+    setPreviewOpen(true);
+  }, [toBaseProjectInfo]);
+
+  // Get workspace filter from URL (set by ClientNav sidebar)
+  const workspaceFilter = searchParams.get('workspace');
 
   const activeProjects = getActiveProjects();
   const archivedProjects = getArchivedProjects();
@@ -53,6 +83,11 @@ const Projects = () => {
   // Filter projects based on filter mode
   const filterProjects = (projects: typeof activeProjects) => {
     let filtered = [...projects];
+
+    // Apply workspace filter from sidebar (if specified)
+    if (workspaceFilter) {
+      filtered = filtered.filter(p => p.workspaceId === workspaceFilter);
+    }
 
     // Apply dropdown filter mode
     if (filterMode === 'owned') {
@@ -83,8 +118,8 @@ const Projects = () => {
   const sharedCount = getSharedProjects().length;
 
   return (
-    <AppLayout>
-      <div className="container mx-auto px-6 py-8">
+    <ClientLayout>
+      <div className="px-6 py-8">
         {/* Profile Header */}
         <div className="flex flex-col md:flex-row md:items-center gap-6 mb-8 p-6 rounded-xl bg-card border border-border">
           {/* Avatar */}
@@ -184,24 +219,7 @@ const Projects = () => {
               </DropdownMenu>
 
               {/* View Mode Toggle */}
-              <div className="flex border border-border rounded-lg">
-                <Button
-                  variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-8 w-8 rounded-r-none"
-                  onClick={() => setViewMode('grid')}
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-8 w-8 rounded-l-none"
-                  onClick={() => setViewMode('list')}
-                >
-                  <List className="w-4 h-4" />
-                </Button>
-              </div>
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
             </div>
           </div>
 
@@ -247,7 +265,7 @@ const Projects = () => {
                 )}
               </div>
             ) : (
-              <ProjectGrid projects={filteredActiveProjects} viewMode={viewMode} />
+              <ProjectGrid projects={filteredActiveProjects} viewMode={viewMode} onProjectClick={handleProjectClick} />
             )}
           </TabsContent>
 
@@ -262,7 +280,7 @@ const Projects = () => {
                 </p>
               </div>
             ) : (
-              <ProjectGrid projects={filteredArchivedProjects} viewMode={viewMode} />
+              <ProjectGrid projects={filteredArchivedProjects} viewMode={viewMode} onProjectClick={handleProjectClick} />
             )}
           </TabsContent>
         </Tabs>
@@ -274,25 +292,105 @@ const Projects = () => {
         onOpenChange={setIsCreateModalOpen}
         defaultOrgId={selectedClientId || undefined}
       />
-    </AppLayout>
+
+      {/* Project Preview Panel */}
+      <ProjectPreviewPanel
+        project={selectedProject}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        isAdmin={false}
+      />
+    </ClientLayout>
   );
 };
 
 // Project Grid/List Component
 interface ProjectGridProps {
   projects: typeof mockProjects;
-  viewMode: ViewMode;
+  viewMode: ProjectListViewMode;
+  onProjectClick?: (project: typeof mockProjects[0], e: React.MouseEvent) => void;
 }
 
-const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
+const ProjectGrid = ({ projects, viewMode, onProjectClick }: ProjectGridProps) => {
+  // Compact View - Table-style dense rows
+  if (viewMode === 'compact') {
+    return (
+      <div className="border border-border rounded-xl bg-card overflow-hidden">
+        {/* Table Header */}
+        <div className="grid grid-cols-12 gap-4 px-4 py-2.5 text-xs font-medium text-muted-foreground border-b bg-muted/30">
+          <div className="col-span-4">Project</div>
+          <div className="col-span-2">Role</div>
+          <div className="col-span-1 text-center">Scans</div>
+          <div className="col-span-2 text-center">Members</div>
+          <div className="col-span-2">Updated</div>
+          <div className="col-span-1"></div>
+        </div>
+        {/* Table Rows */}
+        <div className="divide-y divide-border">
+          {projects.map((project) => (
+            <div
+              key={project.id}
+              onClick={(e) => onProjectClick?.(project, e)}
+              className="grid grid-cols-12 gap-4 px-4 py-2.5 items-center hover:bg-muted/50 transition-colors cursor-pointer"
+            >
+              <div className="col-span-4 flex items-center gap-3 min-w-0">
+                <img
+                  src={project.thumbnail}
+                  alt={project.name}
+                  className="w-10 h-7 rounded object-cover flex-shrink-0"
+                />
+                <span className="text-sm font-medium truncate">{project.name}</span>
+              </div>
+              <div className="col-span-2">
+                <RoleBadge role={project.userRole} size="sm" />
+              </div>
+              <div className="col-span-1 text-center text-sm text-muted-foreground">
+                {project.scans.length}
+              </div>
+              <div className="col-span-2 text-center text-sm text-muted-foreground">
+                {project.members.length}
+              </div>
+              <div className="col-span-2 text-sm text-muted-foreground">
+                {new Date(project.updatedAt).toLocaleDateString()}
+              </div>
+              <div className="col-span-1 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem>View Details</DropdownMenuItem>
+                    <DropdownMenuItem>Share</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {project.userRole === 'owner' && (
+                      <>
+                        <DropdownMenuItem>
+                          {project.isArchived ? 'Unarchive' : 'Archive'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // List View - Single column with detailed rows
   if (viewMode === 'list') {
     return (
       <div className="space-y-3">
         {projects.map((project) => (
-          <Link
+          <div
             key={project.id}
-            to={`/projects/${project.id}`}
-            className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary/50 transition-all"
+            onClick={(e) => onProjectClick?.(project, e)}
+            className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary/50 transition-all cursor-pointer"
           >
             <img
               src={project.thumbnail}
@@ -307,12 +405,19 @@ const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
               <p className="text-sm text-muted-foreground truncate">{project.description}</p>
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>{project.scans.length} scans</span>
+              <span className="flex items-center gap-1">
+                <Scan className="w-3 h-3" />
+                {project.scans.length} scans
+              </span>
+              <span className="flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                {project.members.length} members
+              </span>
               <span>{new Date(project.updatedAt).toLocaleDateString()}</span>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={(e) => e.preventDefault()}>
+                <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -330,7 +435,7 @@ const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </Link>
+          </div>
         ))}
       </div>
     );
@@ -339,10 +444,10 @@ const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {projects.map((project) => (
-        <Link
+        <div
           key={project.id}
-          to={`/projects/${project.id}`}
-          className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300"
+          onClick={(e) => onProjectClick?.(project, e)}
+          className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300 cursor-pointer"
         >
           {/* Thumbnail */}
           <div className="aspect-video relative overflow-hidden bg-muted">
@@ -363,7 +468,7 @@ const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
               <DropdownMenuTrigger asChild>
                 <button
                   className="absolute top-2 right-2 p-1.5 rounded-md bg-black/40 backdrop-blur-sm text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
-                  onClick={(e) => e.preventDefault()}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -424,7 +529,7 @@ const ProjectGrid = ({ projects, viewMode }: ProjectGridProps) => {
               </div>
             </div>
           </div>
-        </Link>
+        </div>
       ))}
     </div>
   );

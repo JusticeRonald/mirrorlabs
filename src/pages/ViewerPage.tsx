@@ -62,7 +62,6 @@ const ViewerContent = () => {
   // Reset view
   const handleResetView = useCallback(() => {
     // This would be handled by the Viewer3D component
-    console.log('Reset view');
   }, []);
 
   // Handle share
