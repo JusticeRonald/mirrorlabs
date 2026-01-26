@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { TransformAxis, Vector3D } from '@/types/viewer';
+import type { TransformAxis } from '@/types/viewer';
 
 /**
  * Axis colors matching Three.js TransformControls convention
@@ -23,8 +23,12 @@ export class RotationGizmoFeedback {
   private arcGroup: THREE.Group | null = null;
 
   private activeAxis: TransformAxis = null;
-  private initialRotation: Vector3D = { x: 0, y: 0, z: 0 };
+  private initialQuaternion: THREE.Quaternion = new THREE.Quaternion();
   private worldPosition: THREE.Vector3 = new THREE.Vector3();
+
+  // Cumulative rotation tracking for 360°+ support
+  private previousQuaternion: THREE.Quaternion = new THREE.Quaternion();
+  private cumulativeAngle: number = 0;
 
   private arcRadius = 0.75;  // Dynamic, set by gizmo size
 
@@ -35,11 +39,11 @@ export class RotationGizmoFeedback {
   /**
    * Start showing rotation feedback
    * @param axis - The axis being rotated (X, Y, Z)
-   * @param startRotation - The object's rotation at drag start (radians)
+   * @param startQuaternion - The object's quaternion at drag start
    * @param worldPosition - The world position of the object being rotated
    * @param gizmoSize - The size of the transform gizmo (default 0.75)
    */
-  startRotation(axis: TransformAxis, startRotation: Vector3D, worldPosition: THREE.Vector3, gizmoSize = 0.75): void {
+  startRotation(axis: TransformAxis, startQuaternion: THREE.Quaternion, worldPosition: THREE.Vector3, gizmoSize = 0.75): void {
     // Only show feedback for single-axis rotation
     if (!axis || !['X', 'Y', 'Z'].includes(axis)) {
       return;
@@ -47,8 +51,12 @@ export class RotationGizmoFeedback {
 
     this.arcRadius = gizmoSize * 0.6;  // 60% of gizmo size to keep arc contained
     this.activeAxis = axis;
-    this.initialRotation = { ...startRotation };
+    this.initialQuaternion.copy(startQuaternion);
     this.worldPosition.copy(worldPosition);
+
+    // Initialize cumulative rotation tracking
+    this.previousQuaternion.copy(startQuaternion);
+    this.cumulativeAngle = 0;
 
     // Create a group to hold arc and label
     this.arcGroup = new THREE.Group();
@@ -62,20 +70,26 @@ export class RotationGizmoFeedback {
 
   /**
    * Update the feedback display during rotation
-   * @param currentRotation - The object's current rotation (radians)
+   * @param currentQuaternion - The object's current quaternion
    */
-  updateRotation(currentRotation: Vector3D): void {
+  updateRotation(currentQuaternion: THREE.Quaternion): void {
     if (!this.activeAxis || !this.arcGroup) {
       return;
     }
 
-    const deltaAngle = this.calculateDeltaAngle(currentRotation);
+    // Calculate small delta from PREVIOUS frame (not initial)
+    // Frame-to-frame deltas are always small, so quaternion shortest-path isn't an issue
+    const frameDelta = this.calculateFrameDelta(currentQuaternion);
 
-    // Update arc geometry
-    this.updateArc(deltaAngle);
+    // Accumulate the delta for unlimited rotation tracking
+    this.cumulativeAngle += frameDelta;
 
-    // Update label
-    this.updateLabel(deltaAngle);
+    // Update previous quaternion for next frame
+    this.previousQuaternion.copy(currentQuaternion);
+
+    // Update visuals with cumulative angle
+    this.updateArc(this.cumulativeAngle);
+    this.updateLabel(this.cumulativeAngle);
   }
 
   /**
@@ -84,6 +98,7 @@ export class RotationGizmoFeedback {
   endRotation(): void {
     this.cleanup();
     this.activeAxis = null;
+    this.cumulativeAngle = 0;
   }
 
   /**
@@ -94,19 +109,43 @@ export class RotationGizmoFeedback {
   }
 
   /**
-   * Calculate rotation delta in radians, normalized to [-PI, PI]
+   * Calculate rotation delta from previous frame to current frame.
+   * Frame-to-frame deltas are always small, so quaternion shortest-path isn't an issue.
+   * This allows unlimited accumulation for 360°+ rotations.
    */
-  private calculateDeltaAngle(currentRotation: Vector3D): number {
+  private calculateFrameDelta(currentQuaternion: THREE.Quaternion): number {
     if (!this.activeAxis) return 0;
 
-    const key = this.activeAxis.toLowerCase() as 'x' | 'y' | 'z';
-    let delta = currentRotation[key] - this.initialRotation[key];
+    // Delta from previous frame: deltaQ = currentQ * prevQ^(-1)
+    const deltaQuat = currentQuaternion.clone()
+      .multiply(this.previousQuaternion.clone().invert());
 
-    // Normalize to [-PI, PI]
-    while (delta > Math.PI) delta -= 2 * Math.PI;
-    while (delta < -Math.PI) delta += 2 * Math.PI;
+    // Extract angle from delta quaternion
+    let angle = 2 * Math.acos(Math.max(-1, Math.min(1, deltaQuat.w)));
 
-    return delta;
+    // Handle near-zero rotation
+    if (angle < 0.0001) return 0;
+
+    // Get the rotation axis from the quaternion
+    const sinHalfAngle = Math.sqrt(1 - deltaQuat.w * deltaQuat.w);
+    if (sinHalfAngle < 0.0001) return 0;
+
+    const axis = new THREE.Vector3(
+      deltaQuat.x / sinHalfAngle,
+      deltaQuat.y / sinHalfAngle,
+      deltaQuat.z / sinHalfAngle
+    );
+
+    // Determine sign based on active axis component
+    const axisMap: Record<string, number> = { X: axis.x, Y: axis.y, Z: axis.z };
+    const axisComponent = axisMap[this.activeAxis];
+
+    if (axisComponent < 0) {
+      angle = -angle;
+    }
+
+    // NO normalization - allow unlimited accumulation
+    return angle;
   }
 
   /**
@@ -195,8 +234,8 @@ export class RotationGizmoFeedback {
     const shape = new THREE.Shape();
     shape.moveTo(0, 0); // Center point
 
-    // Calculate arc direction
-    const clockwise = adjEnd < adjStart;
+    // Direction based on sign of cumulative angle (endAngle contains the cumulative rotation)
+    const clockwise = endAngle < 0;
 
     shape.absarc(0, 0, radius, adjStart, adjEnd, clockwise);
     shape.lineTo(0, 0); // Close to center
