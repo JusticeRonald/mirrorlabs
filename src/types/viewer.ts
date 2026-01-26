@@ -116,6 +116,7 @@ export type AnnotationType = 'pin' | 'comment' | 'markup';
 export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
 export type MarkupToolType = 'freehand' | 'circle' | 'rectangle' | 'arrow' | 'cloud' | 'text' | null;
 export type ViewMode = 'solid' | 'wireframe' | 'points';
+export type CollaborationTab = 'annotations' | 'measurements';
 
 /**
  * Supported splat file formats
@@ -214,6 +215,27 @@ export interface SavedView {
   createdAt: string;
 }
 
+/**
+ * Pending measurement being created (multi-point collection)
+ */
+export interface PendingMeasurement {
+  type: 'distance' | 'area';
+  points: THREE.Vector3[];
+}
+
+/**
+ * Selected measurement point for editing (shows gizmo at point location)
+ */
+export interface SelectedMeasurementPoint {
+  measurementId: string;
+  pointIndex: number; // 0 = start, 1 = end (for distance), 0..n for area
+}
+
+/**
+ * Supported measurement units
+ */
+export type MeasurementUnit = 'ft' | 'm' | 'in' | 'cm';
+
 export interface ViewerState {
   activeTool: string | null;
   viewMode: ViewMode;
@@ -227,12 +249,23 @@ export interface ViewerState {
   savedViews: SavedView[];
   activeSavedViewId: string | null;
 
+  // Collaboration panel state
+  isCollaborationPanelOpen: boolean;
+  activeCollaborationTab: CollaborationTab;
+
   // Annotation state
   selectedAnnotationId: string | null;
   hoveredAnnotationId: string | null;
   isAnnotationPanelOpen: boolean;
   isAnnotationModalOpen: boolean;
   pendingAnnotationPosition: THREE.Vector3 | null;
+
+  // Measurement state
+  pendingMeasurement: PendingMeasurement | null;
+  selectedMeasurementId: string | null;
+  hoveredMeasurementId: string | null;
+  measurementUnit: MeasurementUnit;
+  selectedMeasurementPoint: SelectedMeasurementPoint | null;
 
   // Markup state
   activeMarkupTool: MarkupToolType;
@@ -276,12 +309,23 @@ export const defaultViewerState: ViewerState = {
   savedViews: [],
   activeSavedViewId: null,
 
+  // Collaboration panel state
+  isCollaborationPanelOpen: false,
+  activeCollaborationTab: 'annotations',
+
   // Annotation state
   selectedAnnotationId: null,
   hoveredAnnotationId: null,
   isAnnotationPanelOpen: false,
   isAnnotationModalOpen: false,
   pendingAnnotationPosition: null,
+
+  // Measurement state
+  pendingMeasurement: null,
+  selectedMeasurementId: null,
+  hoveredMeasurementId: null,
+  measurementUnit: 'ft', // Default to feet (US construction standard)
+  selectedMeasurementPoint: null,
 
   // Markup state
   activeMarkupTool: null,
@@ -311,7 +355,6 @@ export const viewerTools: ToolDefinition[] = [
   // Measure
   { id: 'distance', name: 'Distance', icon: 'Ruler', group: 'measure', requiresPermission: 'canMeasure', shortcut: 'D' },
   { id: 'area', name: 'Area', icon: 'Square', group: 'measure', requiresPermission: 'canMeasure', shortcut: 'A' },
-  { id: 'angle', name: 'Angle', icon: 'Triangle', group: 'measure', requiresPermission: 'canMeasure' },
 
   // Annotate
   { id: 'pin', name: 'Pin', icon: 'MapPin', group: 'annotate', requiresPermission: 'canAnnotate' },

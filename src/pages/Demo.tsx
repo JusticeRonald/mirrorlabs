@@ -1,15 +1,13 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import * as THREE from "three";
 import Navigation from "@/components/Navigation";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 import Viewer3D from "@/components/viewer/Viewer3D";
 import ViewerLoadingOverlay from "@/components/viewer/ViewerLoadingOverlay";
 import ViewerToolbar from "@/components/viewer/ViewerToolbar";
-import ViewerSidebar from "@/components/viewer/ViewerSidebar";
 import ViewerHeader from "@/components/viewer/ViewerHeader";
-import type { SplatLoadProgress, SplatLoadError, Measurement, Annotation, ViewMode } from "@/types/viewer";
+import type { SplatLoadProgress, SplatLoadError, ViewMode } from "@/types/viewer";
 import { ROLE_PERMISSIONS } from "@/types/user";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,54 +19,6 @@ import { Building2, Home, Landmark, Layers, Calendar, Scan, Users } from "lucide
 import { useScrollAnimation, useStaggerAnimation } from "@/hooks/use-scroll-animation";
 import { useViewPreference } from "@/hooks/useViewPreference";
 import type { ProjectListViewMode } from "@/types/preferences";
-
-// Demo placeholder data to show what the full viewer experience looks like
-const demoMeasurements: Measurement[] = [
-  {
-    id: 'demo-1',
-    type: 'distance',
-    value: 3.45,
-    unit: 'm',
-    label: 'Wall to window',
-    points: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(3.45, 0, 0)],
-    createdBy: 'Demo User',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-2',
-    type: 'area',
-    value: 12.8,
-    unit: 'm²',
-    label: 'Floor section',
-    points: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 0, 0), new THREE.Vector3(4, 0, 3.2), new THREE.Vector3(0, 0, 3.2)],
-    createdBy: 'Demo User',
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const demoAnnotations: Annotation[] = [
-  {
-    id: 'demo-a1',
-    type: 'comment',
-    content: 'Check electrical outlet placement',
-    position: new THREE.Vector3(1, 1.2, 0),
-    createdBy: 'Demo User',
-    createdAt: new Date().toISOString(),
-    replies: [
-      { id: 'r1', content: 'Will verify on site visit', createdBy: 'Contractor', createdAt: new Date().toISOString() },
-      { id: 'r2', content: 'Confirmed placement is correct', createdBy: 'Engineer', createdAt: new Date().toISOString() },
-    ],
-  },
-  {
-    id: 'demo-a2',
-    type: 'pin',
-    content: 'Confirm ceiling height with contractor',
-    position: new THREE.Vector3(2, 2.5, 1),
-    createdBy: 'Demo User',
-    createdAt: new Date().toISOString(),
-    replies: [],
-  },
-];
 
 type IndustryTab = 'construction' | 'real-estate' | 'cultural';
 
@@ -183,15 +133,6 @@ const Demo = () => {
                   userRole="viewer"
                   onShare={handleShare}
                   variant="demo"
-                />
-
-                {/* Viewer Sidebar - with demo placeholder data */}
-                <ViewerSidebar
-                  measurements={demoMeasurements}
-                  annotations={demoAnnotations}
-                  permissions={demoPermissions}
-                  defaultCollapsed={true}
-                  readOnly={true}
                 />
 
                 {/* 3D Canvas */}

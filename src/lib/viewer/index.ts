@@ -12,6 +12,22 @@ export {
   type MarkerConfig,
 } from './AnnotationRenderer';
 
+// Measurement system
+export {
+  MeasurementRenderer,
+  MEASUREMENT_COLORS,
+  type MeasurementData,
+  type MeasurementState,
+  type MeasurementConfig,
+} from './MeasurementRenderer';
+
+export {
+  MeasurementCalculator,
+  UNIT_DISPLAY,
+  AREA_UNIT_DISPLAY,
+  type MeasurementUnit,
+} from './MeasurementCalculator';
+
 // Picking system
 export {
   SplatPickingSystem,

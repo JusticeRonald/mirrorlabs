@@ -13,6 +13,10 @@ import {
   SplatLoadError,
   AnnotationStatus,
   MarkupToolType,
+  MeasurementUnit,
+  MeasurementType,
+  CollaborationTab,
+  SelectedMeasurementPoint,
 } from '@/types/viewer';
 import { UserRole, ROLE_PERMISSIONS, RolePermissions } from '@/types/user';
 
@@ -34,6 +38,23 @@ interface ViewerContextType {
   addMeasurement: (measurement: Omit<Measurement, 'id' | 'createdAt'>) => void;
   removeMeasurement: (id: string) => void;
   clearMeasurements: () => void;
+  loadMeasurements: (measurements: Measurement[]) => void;
+
+  // Measurement creation (multi-point collection)
+  startMeasurement: (type: 'distance' | 'area') => void;
+  addMeasurementPoint: (point: THREE.Vector3) => void;
+  cancelMeasurement: () => void;
+  finalizeMeasurement: (createdBy: string) => Measurement | null;
+
+  // Measurement interaction
+  selectMeasurement: (id: string | null) => void;
+  hoverMeasurement: (id: string | null) => void;
+  setMeasurementUnit: (unit: MeasurementUnit) => void;
+
+  // Measurement point editing
+  selectMeasurementPoint: (measurementId: string, pointIndex: number) => void;
+  clearMeasurementPointSelection: () => void;
+  updateMeasurementPoint: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
 
   // Annotations
   addAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt'>) => void;
@@ -50,6 +71,11 @@ interface ViewerContextType {
   closeAnnotationPanel: () => void;
   openAnnotationModal: (position: THREE.Vector3) => void;
   closeAnnotationModal: () => void;
+
+  // Collaboration panel
+  openCollaborationPanel: (tab?: CollaborationTab) => void;
+  closeCollaborationPanel: () => void;
+  setActiveCollaborationTab: (tab: CollaborationTab) => void;
 
   // Markup/Drawing
   setActiveMarkupTool: (tool: MarkupToolType) => void;
@@ -132,6 +158,158 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
   const clearMeasurements = useCallback(() => {
     setState(prev => ({ ...prev, measurements: [] }));
+  }, []);
+
+  const loadMeasurements = useCallback((measurements: Measurement[]) => {
+    setState(prev => ({ ...prev, measurements }));
+  }, []);
+
+  // Start a new measurement (multi-point collection)
+  const startMeasurement = useCallback((type: 'distance' | 'area') => {
+    setState(prev => ({
+      ...prev,
+      pendingMeasurement: { type, points: [] },
+    }));
+  }, []);
+
+  // Add a point to the current pending measurement
+  const addMeasurementPoint = useCallback((point: THREE.Vector3) => {
+    setState(prev => {
+      if (!prev.pendingMeasurement) return prev;
+
+      const newPoints = [...prev.pendingMeasurement.points, point.clone()];
+      return {
+        ...prev,
+        pendingMeasurement: {
+          ...prev.pendingMeasurement,
+          points: newPoints,
+        },
+      };
+    });
+  }, []);
+
+  // Cancel the current measurement
+  const cancelMeasurement = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      pendingMeasurement: null,
+    }));
+  }, []);
+
+  // Finalize the measurement and add it to the list
+  const finalizeMeasurement = useCallback((createdBy: string): Measurement | null => {
+    let newMeasurement: Measurement | null = null;
+
+    setState(prev => {
+      if (!prev.pendingMeasurement) return prev;
+
+      const { type, points } = prev.pendingMeasurement;
+
+      // Validate point count
+      if (type === 'distance' && points.length !== 2) return prev;
+      if (type === 'area' && points.length < 3) return prev;
+
+      // Calculate value based on type
+      let value = 0;
+      if (type === 'distance') {
+        value = points[0].distanceTo(points[1]);
+      } else if (type === 'area') {
+        // Use cross product method for area calculation
+        const n = points.length;
+        const crossSum = new THREE.Vector3(0, 0, 0);
+        const origin = points[0];
+        for (let i = 1; i < n - 1; i++) {
+          const v1 = new THREE.Vector3().subVectors(points[i], origin);
+          const v2 = new THREE.Vector3().subVectors(points[i + 1], origin);
+          const cross = new THREE.Vector3().crossVectors(v1, v2);
+          crossSum.add(cross);
+        }
+        value = crossSum.length() / 2;
+      }
+
+      newMeasurement = {
+        id: `measurement-${Date.now()}`,
+        type: type as MeasurementType,
+        points: points.map(p => p.clone()),
+        value,
+        unit: prev.measurementUnit,
+        createdAt: new Date().toISOString(),
+        createdBy,
+      };
+
+      return {
+        ...prev,
+        measurements: [...prev.measurements, newMeasurement],
+        pendingMeasurement: null,
+      };
+    });
+
+    return newMeasurement;
+  }, []);
+
+  // Measurement interaction
+  const selectMeasurement = useCallback((id: string | null) => {
+    setState(prev => ({ ...prev, selectedMeasurementId: id }));
+  }, []);
+
+  const hoverMeasurement = useCallback((id: string | null) => {
+    setState(prev => ({ ...prev, hoveredMeasurementId: id }));
+  }, []);
+
+  const setMeasurementUnit = useCallback((unit: MeasurementUnit) => {
+    setState(prev => ({ ...prev, measurementUnit: unit }));
+  }, []);
+
+  // Measurement point editing
+  const selectMeasurementPoint = useCallback((measurementId: string, pointIndex: number) => {
+    setState(prev => ({
+      ...prev,
+      selectedMeasurementPoint: { measurementId, pointIndex },
+      selectedMeasurementId: measurementId, // Also select the measurement itself
+    }));
+  }, []);
+
+  const clearMeasurementPointSelection = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      selectedMeasurementPoint: null,
+    }));
+  }, []);
+
+  const updateMeasurementPoint = useCallback((
+    measurementId: string,
+    pointIndex: number,
+    newPosition: THREE.Vector3
+  ) => {
+    setState(prev => ({
+      ...prev,
+      measurements: prev.measurements.map(m => {
+        if (m.id !== measurementId) return m;
+
+        const newPoints = [...m.points];
+        newPoints[pointIndex] = newPosition.clone();
+
+        // Recalculate value based on measurement type
+        let newValue = 0;
+        if (m.type === 'distance' && newPoints.length === 2) {
+          newValue = newPoints[0].distanceTo(newPoints[1]);
+        } else if (m.type === 'area' && newPoints.length >= 3) {
+          // Use cross product method for area calculation
+          const n = newPoints.length;
+          const crossSum = new THREE.Vector3(0, 0, 0);
+          const origin = newPoints[0];
+          for (let i = 1; i < n - 1; i++) {
+            const v1 = new THREE.Vector3().subVectors(newPoints[i], origin);
+            const v2 = new THREE.Vector3().subVectors(newPoints[i + 1], origin);
+            const cross = new THREE.Vector3().crossVectors(v1, v2);
+            crossSum.add(cross);
+          }
+          newValue = crossSum.length() / 2;
+        }
+
+        return { ...m, points: newPoints, value: newValue };
+      }),
+    }));
   }, []);
 
   // Annotation actions
@@ -241,6 +419,23 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       isAnnotationModalOpen: false,
       pendingAnnotationPosition: null,
     }));
+  }, []);
+
+  // Collaboration panel actions
+  const openCollaborationPanel = useCallback((tab?: CollaborationTab) => {
+    setState(prev => ({
+      ...prev,
+      isCollaborationPanelOpen: true,
+      activeCollaborationTab: tab ?? prev.activeCollaborationTab,
+    }));
+  }, []);
+
+  const closeCollaborationPanel = useCallback(() => {
+    setState(prev => ({ ...prev, isCollaborationPanelOpen: false }));
+  }, []);
+
+  const setActiveCollaborationTab = useCallback((tab: CollaborationTab) => {
+    setState(prev => ({ ...prev, activeCollaborationTab: tab }));
   }, []);
 
   // Markup/Drawing
@@ -375,6 +570,17 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     addMeasurement,
     removeMeasurement,
     clearMeasurements,
+    loadMeasurements,
+    startMeasurement,
+    addMeasurementPoint,
+    cancelMeasurement,
+    finalizeMeasurement,
+    selectMeasurement,
+    hoverMeasurement,
+    setMeasurementUnit,
+    selectMeasurementPoint,
+    clearMeasurementPointSelection,
+    updateMeasurementPoint,
     addAnnotation,
     removeAnnotation,
     addAnnotationReply,
@@ -387,6 +593,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     closeAnnotationPanel,
     openAnnotationModal,
     closeAnnotationModal,
+    openCollaborationPanel,
+    closeCollaborationPanel,
+    setActiveCollaborationTab,
     setActiveMarkupTool,
     setDrawingMode,
     addSavedView,

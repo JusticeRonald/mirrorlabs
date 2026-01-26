@@ -5,8 +5,9 @@ import type {
   SplatMetadata,
   SplatLoadProgress,
 } from './renderers';
-import type { SplatOrientation, SplatTransform } from '@/types/viewer';
+import type { SplatOrientation, SplatTransform, MeasurementUnit } from '@/types/viewer';
 import { AnnotationRenderer, type AnnotationData, type AnnotationStatus } from './AnnotationRenderer';
+import { MeasurementRenderer, type MeasurementData } from './MeasurementRenderer';
 import { SplatPickingSystem, type PickResult } from './SplatPickingSystem';
 
 /**
@@ -25,6 +26,7 @@ export class SceneManager {
 
   // Annotation system
   private annotationRenderer: AnnotationRenderer | null = null;
+  private measurementRenderer: MeasurementRenderer | null = null;
   private pickingSystem: SplatPickingSystem | null = null;
   private raycaster: THREE.Raycaster;
 
@@ -37,6 +39,9 @@ export class SceneManager {
 
     // Initialize annotation renderer
     this.annotationRenderer = new AnnotationRenderer(scene);
+
+    // Initialize measurement renderer
+    this.measurementRenderer = new MeasurementRenderer(scene);
   }
 
   /**
@@ -54,6 +59,13 @@ export class SceneManager {
    */
   getAnnotationRenderer(): AnnotationRenderer | null {
     return this.annotationRenderer;
+  }
+
+  /**
+   * Get the measurement renderer
+   */
+  getMeasurementRenderer(): MeasurementRenderer | null {
+    return this.measurementRenderer;
   }
 
   /**
@@ -114,6 +126,10 @@ export class SceneManager {
     const mesh = this.splatRenderer.getMesh();
     if (mesh) {
       this.objects.set('splat-scene', mesh);
+
+      // Parent annotations and measurements to the splat mesh
+      // so they transform with the splat when rotated/scaled/moved
+      this.setRenderersParentObject(mesh);
     }
 
     return metadata;
@@ -362,6 +378,13 @@ export class SceneManager {
   }
 
   /**
+   * Update an annotation's position (for drag-to-reposition)
+   */
+  updateAnnotationPosition(id: string, worldPosition: THREE.Vector3): void {
+    this.annotationRenderer?.updatePosition(id, worldPosition);
+  }
+
+  /**
    * Get all annotation IDs
    */
   getAnnotationIds(): string[] {
@@ -379,26 +402,174 @@ export class SceneManager {
   }
 
   /**
-   * Add a measurement to the scene
+   * Add a distance measurement to the scene
    */
-  addMeasurement(id: string, points: THREE.Vector3[], data: any): void {
-    // Create measurement group (placeholder for now)
-    const group = new THREE.Group();
-    group.userData = { type: 'measurement', points, data };
+  addDistanceMeasurement(
+    id: string,
+    p1: THREE.Vector3,
+    p2: THREE.Vector3,
+    data: Omit<MeasurementData, 'type' | 'points' | 'value'>
+  ): THREE.Group | null {
+    if (!this.measurementRenderer) return null;
 
+    const group = this.measurementRenderer.addDistanceMeasurement(id, p1, p2, data);
     this.measurements.set(id, group);
-    this.scene.add(group);
+    return group;
+  }
+
+  /**
+   * Add an area measurement to the scene
+   */
+  addAreaMeasurement(
+    id: string,
+    points: THREE.Vector3[],
+    data: Omit<MeasurementData, 'type' | 'points' | 'value'>
+  ): THREE.Group | null {
+    if (!this.measurementRenderer) return null;
+
+    const group = this.measurementRenderer.addAreaMeasurement(id, points, data);
+    this.measurements.set(id, group);
+    return group;
+  }
+
+  /**
+   * Add a measurement to the scene (legacy method for backward compatibility)
+   */
+  addMeasurement(
+    id: string,
+    points: THREE.Vector3[],
+    data: Omit<MeasurementData, 'type' | 'points' | 'value'>
+  ): void {
+    if (points.length === 2) {
+      this.addDistanceMeasurement(id, points[0], points[1], data);
+    } else if (points.length >= 3) {
+      this.addAreaMeasurement(id, points, data);
+    }
   }
 
   /**
    * Remove a measurement from the scene
    */
   removeMeasurement(id: string): void {
-    const measurement = this.measurements.get(id);
-    if (!measurement) return;
-
-    this.scene.remove(measurement);
+    if (this.measurementRenderer) {
+      this.measurementRenderer.removeMeasurement(id);
+    }
     this.measurements.delete(id);
+  }
+
+  /**
+   * Update a measurement's unit
+   */
+  updateMeasurementUnit(id: string, unit: MeasurementUnit): void {
+    this.measurementRenderer?.updateMeasurement(id, unit);
+  }
+
+  /**
+   * Set hovered measurement
+   */
+  setHoveredMeasurement(id: string | null): void {
+    this.measurementRenderer?.setHovered(id);
+  }
+
+  /**
+   * Set selected measurement
+   */
+  setSelectedMeasurement(id: string | null): void {
+    this.measurementRenderer?.setSelected(id);
+  }
+
+  /**
+   * Show distance preview (while measuring)
+   */
+  showDistancePreview(p1: THREE.Vector3, p2: THREE.Vector3): void {
+    this.measurementRenderer?.showDistancePreview(p1, p2);
+  }
+
+  /**
+   * Show area preview (while measuring)
+   */
+  showAreaPreview(points: THREE.Vector3[], cursorPoint?: THREE.Vector3): void {
+    this.measurementRenderer?.showAreaPreview(points, cursorPoint);
+  }
+
+  /**
+   * Clear measurement preview
+   */
+  clearMeasurementPreview(): void {
+    this.measurementRenderer?.clearPreview();
+  }
+
+  /**
+   * Update a measurement point's position (for point editing with gizmo)
+   */
+  updateMeasurementPoint(id: string, pointIndex: number, newPosition: THREE.Vector3): void {
+    this.measurementRenderer?.updateMeasurementPoint(id, pointIndex, newPosition);
+  }
+
+  /**
+   * Snap a world position to the splat surface by projecting from camera
+   * Used when dragging measurement points with the gizmo to ensure they stay on the surface.
+   *
+   * @param camera - The camera being used for rendering
+   * @param worldPosition - The world position to snap (e.g., gizmo helper position)
+   * @returns The snapped position on the splat surface, or the original position if no intersection
+   */
+  snapPositionToSplatSurface(camera: THREE.Camera, worldPosition: THREE.Vector3): THREE.Vector3 {
+    if (!this.pickingSystem) return worldPosition;
+
+    const splatMesh = this.splatRenderer?.getMesh() ?? null;
+    if (!splatMesh) return worldPosition;
+
+    // Get camera position
+    const cameraPos = new THREE.Vector3();
+    camera.getWorldPosition(cameraPos);
+
+    // Create ray from camera toward the world position
+    const direction = worldPosition.clone().sub(cameraPos).normalize();
+    this.raycaster.set(cameraPos, direction);
+
+    try {
+      const intersections = this.raycaster.intersectObject(splatMesh, false);
+      if (intersections.length > 0) {
+        return intersections[0].point.clone();
+      }
+    } catch {
+      // WASM may fail - return original position
+    }
+
+    return worldPosition;
+  }
+
+  /**
+   * Clear all measurements
+   */
+  clearMeasurements(): void {
+    if (this.measurementRenderer) {
+      this.measurementRenderer.clear();
+    }
+    this.measurements.clear();
+  }
+
+  /**
+   * Get measurement point position in world space (for HTML overlay)
+   */
+  getMeasurementPointWorldPosition(id: string, pointIndex: number): THREE.Vector3 | null {
+    return this.measurementRenderer?.getPointWorldPosition(id, pointIndex) ?? null;
+  }
+
+  /**
+   * Get annotation marker position in world space (for HTML overlay)
+   */
+  getAnnotationWorldPosition(id: string): THREE.Vector3 | null {
+    return this.annotationRenderer?.getMarkerWorldPosition(id) ?? null;
+  }
+
+  /**
+   * Set the parent object for annotations and measurements (for transform parenting)
+   */
+  setRenderersParentObject(parent: THREE.Object3D | null): void {
+    this.annotationRenderer?.setParentObject(parent);
+    this.measurementRenderer?.setParentObject(parent);
   }
 
   /**
@@ -504,9 +675,12 @@ export class SceneManager {
     }
     this.annotations.clear();
 
-    this.measurements.forEach((measurement, id) => {
-      this.removeMeasurement(id);
-    });
+    // Clear measurements using the renderer
+    if (this.measurementRenderer) {
+      this.measurementRenderer.dispose();
+      this.measurementRenderer = null;
+    }
+    this.measurements.clear();
 
     // Dispose picking system
     if (this.pickingSystem) {

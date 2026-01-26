@@ -3,7 +3,6 @@ import {
   Maximize,
   Ruler,
   Square,
-  Triangle,
   MessageSquare,
   Box,
   Download,
@@ -54,13 +53,15 @@ interface ViewerToolbarProps {
   // Annotation panel
   onOpenAnnotationPanel?: () => void;
   annotationCount?: number;
+  // Measurement panel
+  onOpenMeasurementPanel?: () => void;
+  measurementCount?: number;
 }
 
 const iconMap: Record<string, React.ElementType> = {
   Maximize,
   Ruler,
   Square,
-  Triangle,
   MessageSquare,
   Box,
   Download,
@@ -125,15 +126,17 @@ interface MeasureToolDropdownProps {
   onToolChange: (tool: string | null) => void;
   canMeasure: boolean;
   isLoggedIn: boolean;
+  measurementCount?: number;
+  onOpenMeasurementPanel?: () => void;
+  onTransformModeChange?: (mode: TransformMode | null) => void;
 }
 
 const measureTools = [
-  { id: 'distance', name: 'Distance', icon: Ruler, shortcut: 'D', comingSoon: true },
+  { id: 'distance', name: 'Distance', icon: Ruler, shortcut: 'D', comingSoon: false },
   { id: 'area', name: 'Area', icon: Square, shortcut: 'A', comingSoon: true },
-  { id: 'angle', name: 'Angle', icon: Triangle, shortcut: null, comingSoon: true },
 ] as const;
 
-const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn }: MeasureToolDropdownProps) => {
+const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn, measurementCount = 0, onOpenMeasurementPanel, onTransformModeChange }: MeasureToolDropdownProps) => {
   const [open, setOpen] = useState(false);
 
   // Find the currently active measurement tool (if any)
@@ -148,6 +151,12 @@ const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn 
       onToolChange(null);
     } else {
       onToolChange(toolId);
+      // Hide gizmo for mutual exclusivity
+      onTransformModeChange?.(null);
+    }
+    // Open the measurement panel when a tool is selected
+    if (onOpenMeasurementPanel) {
+      onOpenMeasurementPanel();
     }
     setOpen(false);
   };
@@ -155,37 +164,38 @@ const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn 
   const showLoginPrompt = !canMeasure && !isLoggedIn;
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-9 w-9 transition-all relative',
-                isMeasureToolActive && 'bg-primary/20 text-primary border border-primary/30',
-                !canMeasure && 'opacity-50'
-              )}
-            >
-              <ActiveIcon className="h-4 w-4" />
-              <div
-                className="absolute top-0 right-0 w-0 h-0 border-t-[6px] border-t-current border-l-[6px] border-l-transparent"
-                aria-hidden="true"
-              />
-              {showLoginPrompt && (
-                <Lock className="h-2.5 w-2.5 absolute -top-0.5 -right-0.5 text-muted-foreground" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <span>Measure Tools</span>
-          {showLoginPrompt && (
-            <span className="text-xs text-muted-foreground block">Log in to use</span>
-          )}
-        </TooltipContent>
-      </Tooltip>
+    <div className="relative">
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-9 w-9 transition-all relative',
+                  isMeasureToolActive && 'bg-primary/20 text-primary border border-primary/30',
+                  !canMeasure && 'opacity-50'
+                )}
+              >
+                <ActiveIcon className="h-4 w-4" />
+                <div
+                  className="absolute top-0 right-0 w-0 h-0 border-t-[6px] border-t-current border-l-[6px] border-l-transparent"
+                  aria-hidden="true"
+                />
+                {showLoginPrompt && (
+                  <Lock className="h-2.5 w-2.5 absolute -top-0.5 -right-0.5 text-muted-foreground" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <span>Measure Tools</span>
+            {showLoginPrompt && (
+              <span className="text-xs text-muted-foreground block">Log in to use</span>
+            )}
+          </TooltipContent>
+        </Tooltip>
       <DropdownMenuContent side="top" align="start" className="min-w-[180px]">
         {measureTools.map((tool) => (
           <DropdownMenuItem
@@ -207,6 +217,12 @@ const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn 
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+      {measurementCount > 0 && (
+        <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center pointer-events-none">
+          {measurementCount > 9 ? '9+' : measurementCount}
+        </span>
+      )}
+    </div>
   );
 };
 
@@ -230,6 +246,8 @@ const ViewerToolbar = ({
   isSavingTransform = false,
   onOpenAnnotationPanel,
   annotationCount = 0,
+  onOpenMeasurementPanel,
+  measurementCount = 0,
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -297,7 +315,10 @@ const ViewerToolbar = ({
                       'h-9 w-9 transition-all',
                       transformMode === 'translate' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
-                    onClick={() => onTransformModeChange(transformMode === 'translate' ? null : 'translate')}
+                    onClick={() => {
+                      onTransformModeChange(transformMode === 'translate' ? null : 'translate');
+                      onToolChange(null); // Clear tool for mutual exclusivity
+                    }}
                   >
                     <Move className="h-4 w-4" />
                   </Button>
@@ -319,7 +340,10 @@ const ViewerToolbar = ({
                       'h-9 w-9 transition-all',
                       transformMode === 'rotate' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
-                    onClick={() => onTransformModeChange(transformMode === 'rotate' ? null : 'rotate')}
+                    onClick={() => {
+                      onTransformModeChange(transformMode === 'rotate' ? null : 'rotate');
+                      onToolChange(null); // Clear tool for mutual exclusivity
+                    }}
                   >
                     <Rotate3D className="h-4 w-4" />
                   </Button>
@@ -341,7 +365,10 @@ const ViewerToolbar = ({
                       'h-9 w-9 transition-all',
                       transformMode === 'scale' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
-                    onClick={() => onTransformModeChange(transformMode === 'scale' ? null : 'scale')}
+                    onClick={() => {
+                      onTransformModeChange(transformMode === 'scale' ? null : 'scale');
+                      onToolChange(null); // Clear tool for mutual exclusivity
+                    }}
                   >
                     <Maximize2 className="h-4 w-4" />
                   </Button>
@@ -424,6 +451,9 @@ const ViewerToolbar = ({
             onToolChange={onToolChange}
             canMeasure={permissions.canMeasure}
             isLoggedIn={isLoggedIn}
+            measurementCount={measurementCount}
+            onOpenMeasurementPanel={onOpenMeasurementPanel}
+            onTransformModeChange={onTransformModeChange}
           />
         </div>
 
@@ -439,7 +469,18 @@ const ViewerToolbar = ({
                 icon={MessageSquare}
                 active={activeTool === 'comment'}
                 shortcut="C"
-                onClick={onOpenAnnotationPanel}
+                onClick={() => {
+                  // Toggle tool state (like measurement tools do)
+                  if (activeTool === 'comment') {
+                    onToolChange(null);
+                  } else {
+                    onToolChange('comment');
+                    // Hide gizmo for mutual exclusivity
+                    onTransformModeChange?.(null);
+                  }
+                  // Also open the panel
+                  onOpenAnnotationPanel();
+                }}
               />
               {annotationCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-medium rounded-full flex items-center justify-center pointer-events-none">

@@ -83,6 +83,7 @@ const DEFAULT_MARKER_CONFIG: MarkerConfig = {
  */
 export class AnnotationRenderer {
   private scene: THREE.Scene;
+  private parentObject: THREE.Object3D;
   private markers: Map<string, THREE.Group>;
   private config: MarkerConfig;
 
@@ -96,6 +97,7 @@ export class AnnotationRenderer {
 
   constructor(scene: THREE.Scene, config: Partial<MarkerConfig> = {}) {
     this.scene = scene;
+    this.parentObject = scene; // Default to scene
     this.markers = new Map();
     this.config = { ...DEFAULT_MARKER_CONFIG, ...config };
 
@@ -113,6 +115,43 @@ export class AnnotationRenderer {
   }
 
   /**
+   * Set the parent object for annotations (e.g., splat mesh).
+   * When set, annotations will transform with the parent.
+   */
+  setParentObject(parent: THREE.Object3D | null): void {
+    const newParent = parent ?? this.scene;
+    if (newParent === this.parentObject) return;
+
+    // Re-parent existing markers
+    this.markers.forEach((marker) => {
+      this.parentObject.remove(marker);
+      newParent.add(marker);
+    });
+
+    this.parentObject = newParent;
+  }
+
+  /**
+   * Get the current parent object
+   */
+  getParentObject(): THREE.Object3D {
+    return this.parentObject;
+  }
+
+  /**
+   * Get annotation marker position in world space (for HTML overlay)
+   */
+  getMarkerWorldPosition(id: string): THREE.Vector3 | null {
+    const marker = this.markers.get(id);
+    if (!marker) return null;
+
+    // Use getWorldPosition() which correctly applies all ancestor transforms
+    const worldPos = new THREE.Vector3();
+    marker.getWorldPosition(worldPos);
+    return worldPos;
+  }
+
+  /**
    * Create and add an annotation marker to the scene
    */
   addAnnotation(
@@ -127,8 +166,10 @@ export class AnnotationRenderer {
     const color = STATUS_COLORS[data.status] || STATUS_COLORS.open;
     const marker = this.createMarker(color, data);
 
-    // Position the marker
-    marker.position.copy(position);
+    // Convert world position to parent's local space
+    const localPosition = position.clone();
+    this.parentObject.worldToLocal(localPosition);
+    marker.position.copy(localPosition);
 
     // Store data in userData for picking
     marker.userData = {
@@ -137,77 +178,27 @@ export class AnnotationRenderer {
       data,
     };
 
-    // Add to scene and tracking
-    this.scene.add(marker);
+    // Add to parent object and tracking
+    this.parentObject.add(marker);
     this.markers.set(data.id, marker);
 
     return marker;
   }
 
   /**
-   * Create a pin marker with sphere head and cone shaft
+   * Create an invisible position tracker for annotations
+   *
+   * Note: Visible 3D geometry (sphere + cone) has been removed.
+   * The HTML overlay (AnnotationIconOverlay) handles all visual rendering.
+   * This empty group is kept for:
+   * - Position tracking via getMarkerWorldPosition()
+   * - Transform parenting (annotations follow splat rotation)
    */
-  private createMarker(color: number, data: AnnotationData): THREE.Group {
+  private createMarker(_color: number, data: AnnotationData): THREE.Group {
     const group = new THREE.Group();
     group.name = `annotation-${data.id}`;
-
-    // Sphere (selection target - the pin head)
-    const sphereMaterial = new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: this.config.emissiveIntensity,
-      metalness: 0.2,
-      roughness: 0.8,
-      transparent: true,
-      opacity: 1.0,
-    });
-    const sphere = new THREE.Mesh(this.sphereGeometry, sphereMaterial);
-    sphere.name = 'pin-head';
-    sphere.position.y = this.config.coneHeight + this.config.sphereRadius;
-    group.add(sphere);
-
-    // Cone (the pin shaft)
-    const coneMaterial = new THREE.MeshStandardMaterial({
-      color,
-      metalness: 0.2,
-      roughness: 0.8,
-      transparent: true,
-      opacity: 1.0,
-    });
-    const cone = new THREE.Mesh(this.coneGeometry, coneMaterial);
-    cone.name = 'pin-shaft';
-    // Rotate cone to point downward and position it
-    cone.rotation.x = Math.PI;
-    cone.position.y = this.config.coneHeight / 2;
-    group.add(cone);
-
-    // Add badge for reply count (if any)
-    if (data.replyCount && data.replyCount > 0) {
-      this.addReplyBadge(group, data.replyCount);
-    }
-
+    // No visible geometry - HTML overlay handles rendering
     return group;
-  }
-
-  /**
-   * Add a small badge showing reply count
-   */
-  private addReplyBadge(group: THREE.Group, count: number): void {
-    // Create a small sphere as a badge
-    const badgeGeometry = new THREE.SphereGeometry(0.08, 8, 6);
-    const badgeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3B82F6, // Blue
-      emissive: 0x3B82F6,
-      emissiveIntensity: 0.5,
-    });
-    const badge = new THREE.Mesh(badgeGeometry, badgeMaterial);
-    badge.name = 'reply-badge';
-    badge.position.set(
-      this.config.sphereRadius,
-      this.config.coneHeight + this.config.sphereRadius * 2,
-      0
-    );
-    group.add(badge);
   }
 
   /**
@@ -221,16 +212,27 @@ export class AnnotationRenderer {
     const newData = { ...currentData, ...updates };
     marker.userData.data = newData;
 
-    // Update color if status changed
+    // Update color if status changed (for non-HTML-overlay modes)
     if (updates.status && updates.status !== currentData.status) {
       const newColor = STATUS_COLORS[updates.status];
       this.updateMarkerColor(marker, newColor);
     }
+    // Note: Reply badge removed - HTML overlay handles reply count display
+  }
 
-    // Update reply badge
-    if (updates.replyCount !== undefined) {
-      this.updateReplyBadge(marker, updates.replyCount);
-    }
+  /**
+   * Update an annotation marker's position (for drag-to-reposition)
+   * @param id Annotation ID
+   * @param worldPosition New world position
+   */
+  updatePosition(id: string, worldPosition: THREE.Vector3): void {
+    const marker = this.markers.get(id);
+    if (!marker) return;
+
+    // Convert world position to parent's local space
+    const localPosition = worldPosition.clone();
+    this.parentObject.worldToLocal(localPosition);
+    marker.position.copy(localPosition);
   }
 
   /**
@@ -249,33 +251,14 @@ export class AnnotationRenderer {
   }
 
   /**
-   * Update reply badge count
-   */
-  private updateReplyBadge(marker: THREE.Group, count: number): void {
-    // Remove existing badge
-    const existingBadge = marker.getObjectByName('reply-badge');
-    if (existingBadge) {
-      marker.remove(existingBadge);
-      (existingBadge as THREE.Mesh).geometry?.dispose();
-      const mat = (existingBadge as THREE.Mesh).material;
-      if (mat instanceof THREE.Material) mat.dispose();
-    }
-
-    // Add new badge if count > 0
-    if (count > 0) {
-      this.addReplyBadge(marker, count);
-    }
-  }
-
-  /**
    * Remove an annotation from the scene
    */
   removeAnnotation(id: string): void {
     const marker = this.markers.get(id);
     if (!marker) return;
 
-    // Remove from scene
-    this.scene.remove(marker);
+    // Remove from parent object
+    this.parentObject.remove(marker);
 
     // Dispose of geometries and materials
     marker.traverse((child) => {

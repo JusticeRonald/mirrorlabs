@@ -5,13 +5,13 @@ import { ViewerProvider, useViewer } from '@/contexts/ViewerContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Viewer3D from '@/components/viewer/Viewer3D';
 import ViewerToolbar from '@/components/viewer/ViewerToolbar';
-import ViewerSidebar from '@/components/viewer/ViewerSidebar';
 import ViewerHeader from '@/components/viewer/ViewerHeader';
+import { CollaborationPanel, type CollaborationTab } from '@/components/viewer/CollaborationPanel';
 import ViewerSharePanel from '@/components/viewer/ViewerSharePanel';
 import ViewerLoadingOverlay from '@/components/viewer/ViewerLoadingOverlay';
-import AnnotationPanel from '@/components/viewer/AnnotationPanel';
 import AnnotationModal from '@/components/viewer/AnnotationModal';
 import { AnnotationIconOverlay } from '@/components/viewer/AnnotationMarker';
+import { MeasurementIconOverlay, type MeasurementPointData } from '@/components/viewer/MeasurementMarker';
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
 import { getProjectById as getMockProjectById, getScanById as getMockScanById } from '@/data/mockProjects';
 import { getProjectById as getSupabaseProject } from '@/lib/supabase/services/projects';
@@ -22,6 +22,9 @@ import {
   updateAnnotation as updateAnnotationService,
   deleteAnnotation as deleteAnnotationService,
   addAnnotationReply as addAnnotationReplyService,
+  getScanMeasurements,
+  createMeasurement as createMeasurementService,
+  deleteMeasurement as deleteMeasurementService,
 } from '@/lib/supabase/services/annotations';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
@@ -66,6 +69,21 @@ interface ViewerScanInfo {
   status: string;
 }
 
+/**
+ * Validate that a position has finite coordinates within reasonable bounds
+ * Prevents sending invalid data to Supabase (NaN, Infinity, or extreme values)
+ */
+const isValidPosition = (pos: { x: number; y: number; z: number }): boolean => {
+  return (
+    Number.isFinite(pos.x) &&
+    Number.isFinite(pos.y) &&
+    Number.isFinite(pos.z) &&
+    Math.abs(pos.x) < 1e6 &&
+    Math.abs(pos.y) < 1e6 &&
+    Math.abs(pos.z) < 1e6
+  );
+};
+
 // Inner component that uses the ViewerContext
 const ViewerContent = () => {
   const { projectId, scanId } = useParams<{ projectId: string; scanId: string }>();
@@ -79,6 +97,16 @@ const ViewerContent = () => {
     toggleGrid,
     addMeasurement,
     removeMeasurement,
+    loadMeasurements,
+    startMeasurement,
+    addMeasurementPoint,
+    cancelMeasurement,
+    finalizeMeasurement,
+    selectMeasurement,
+    hoverMeasurement,
+    selectMeasurementPoint,
+    clearMeasurementPointSelection,
+    updateMeasurementPoint,
     addAnnotation,
     removeAnnotation,
     updateAnnotationStatus,
@@ -90,10 +118,14 @@ const ViewerContent = () => {
     openAnnotationModal,
     closeAnnotationModal,
     loadAnnotations,
+    openCollaborationPanel,
+    closeCollaborationPanel,
+    setActiveCollaborationTab,
   } = useViewer();
 
-  // Get current user ID (use 'demo-user' for demo mode)
-  const currentUserId = user?.id || 'demo-user';
+  // Get current user ID (generate unique session ID for demo mode to isolate demo users)
+  const [demoSessionId] = useState(() => `demo-${crypto.randomUUID().slice(0, 8)}`);
+  const currentUserId = user?.id || demoSessionId;
 
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
@@ -116,12 +148,25 @@ const ViewerContent = () => {
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const resetViewFnRef = useRef<(() => void) | null>(null);
 
+  // Refs for delete handlers (to avoid TDZ in keyboard handler useEffect)
+  const handleMeasurementDeleteRef = useRef<((id: string) => void) | null>(null);
+  const handleAnnotationDeleteRef = useRef<((id: string) => void) | null>(null);
+
   // Camera state for HTML annotation overlay
   const [camera, setCamera] = useState<THREE.PerspectiveCamera | null>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   // Annotation persistence state
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
+
+  // Measurement point drag state (for direct drag with surface snap)
+  const [draggingMeasurementPoint, setDraggingMeasurementPoint] = useState<{
+    measurementId: string;
+    pointIndex: number;
+  } | null>(null);
+
+  // Annotation drag state (for direct drag with surface snap)
+  const [draggingAnnotation, setDraggingAnnotation] = useState<string | null>(null);
 
   // Real-time annotation subscription
   const { isConnected: isRealtimeConnected } = useAnnotationSubscription({
@@ -260,6 +305,30 @@ const ViewerContent = () => {
               // Don't block the viewer for annotation errors
             }
 
+            // Load existing measurements from Supabase
+            try {
+              const measurementsData = await getScanMeasurements(scanId);
+              if (measurementsData && measurementsData.length > 0) {
+                // Convert database format to viewer format
+                const viewerMeasurements = measurementsData.map(m => {
+                  const pointsJson = m.points_json as Array<{ x: number; y: number; z: number }>;
+                  return {
+                    id: m.id,
+                    type: m.type as 'distance' | 'area',
+                    points: pointsJson.map(p => new THREE.Vector3(p.x, p.y, p.z)),
+                    value: m.value,
+                    unit: m.unit,
+                    label: m.label || undefined,
+                    createdBy: m.created_by,
+                    createdAt: m.created_at,
+                  };
+                });
+                loadMeasurements(viewerMeasurements);
+              }
+            } catch {
+              // Don't block the viewer for measurement errors
+            }
+
             setIsDataLoading(false);
             return;
           }
@@ -325,28 +394,150 @@ const ViewerContent = () => {
   }, [projectId, scanId]);
 
   // Handle point selection for measurements/annotations
-  const handlePointSelect = useCallback((point: THREE.Vector3) => {
-    if (state.activeTool === 'distance' || state.activeTool === 'area' || state.activeTool === 'angle') {
-      // In a real app, this would track multiple points for measurement
-      // For now, just add a simple distance measurement
-      addMeasurement({
-        type: state.activeTool as 'distance' | 'area' | 'angle',
-        points: [point],
-        value: Math.random() * 10 + 1, // Placeholder value
-        unit: 'm',
-        createdBy: 'current-user',
-      });
+  const handlePointSelect = useCallback(async (point: THREE.Vector3) => {
+    if (state.activeTool === 'distance') {
+      // Distance measurement: 2 points required
+      if (!state.pendingMeasurement) {
+        // Start a new distance measurement
+        startMeasurement('distance');
+        addMeasurementPoint(point);
+      } else if (state.pendingMeasurement.points.length === 1) {
+        // Second point: finalize the measurement
+        addMeasurementPoint(point);
+        // Use setTimeout to ensure state update completes before finalizing
+        setTimeout(async () => {
+          const measurement = finalizeMeasurement(currentUserId);
+          // Persist to Supabase if configured
+          if (measurement && scanId && isSupabaseConfigured()) {
+            try {
+              await createMeasurementService({
+                scan_id: scanId,
+                type: measurement.type,
+                points_json: measurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                value: measurement.value,
+                unit: measurement.unit,
+                label: measurement.label || null,
+                created_by: currentUserId,
+              });
+            } catch {
+              // Measurement saved locally, persistence failed silently
+            }
+          }
+        }, 0);
+      }
+    } else if (state.activeTool === 'area') {
+      // Area measurement: 3+ points required, double-click to close
+      if (!state.pendingMeasurement) {
+        startMeasurement('area');
+        addMeasurementPoint(point);
+      } else {
+        addMeasurementPoint(point);
+      }
     } else if (state.activeTool === 'pin' || state.activeTool === 'comment') {
       // Open annotation modal for annotation creation
       openAnnotationModal(point);
     }
-  }, [state.activeTool, addMeasurement, openAnnotationModal]);
+  }, [state.activeTool, state.pendingMeasurement, startMeasurement, addMeasurementPoint, finalizeMeasurement, currentUserId, scanId, openAnnotationModal]);
 
   // Handle scene ready
   const handleSceneReady = useCallback((manager: SceneManager) => {
     setSceneManager(manager);
     sceneManagerRef.current = manager;
   }, []);
+
+  // Track rendered measurements to sync with scene
+  const renderedMeasurementsRef = useRef<Set<string>>(new Set());
+
+  // Track rendered annotations to sync with scene
+  const renderedAnnotationsRef = useRef<Set<string>>(new Set());
+
+  // Sync annotations with SceneManager (for transform parenting)
+  useEffect(() => {
+    if (!sceneManagerRef.current) return;
+
+    const manager = sceneManagerRef.current;
+    const renderedIds = renderedAnnotationsRef.current;
+    const currentIds = new Set(state.annotations.map(a => a.id));
+
+    // Add new annotations to scene
+    for (const annotation of state.annotations) {
+      if (!renderedIds.has(annotation.id)) {
+        const position = annotation.position instanceof THREE.Vector3
+          ? annotation.position
+          : new THREE.Vector3(annotation.position.x, annotation.position.y, annotation.position.z);
+
+        manager.addAnnotation(annotation.id, position, {
+          id: annotation.id,
+          scanId: scanId || '',
+          type: annotation.type,
+          status: annotation.status,
+          content: annotation.content,
+          createdBy: annotation.createdBy,
+          createdAt: annotation.createdAt,
+          replyCount: annotation.replies?.length || 0,
+        });
+        renderedIds.add(annotation.id);
+      }
+    }
+
+    // Remove deleted annotations from scene
+    for (const id of renderedIds) {
+      if (!currentIds.has(id)) {
+        manager.removeAnnotation(id);
+        renderedIds.delete(id);
+      }
+    }
+  }, [state.annotations, scanId]);
+
+  // Sync measurements with SceneManager
+  useEffect(() => {
+    if (!sceneManagerRef.current) return;
+
+    const manager = sceneManagerRef.current;
+    const renderedIds = renderedMeasurementsRef.current;
+    const currentIds = new Set(state.measurements.map(m => m.id));
+
+    // Add new measurements to scene
+    for (const measurement of state.measurements) {
+      if (!renderedIds.has(measurement.id)) {
+        if (measurement.type === 'distance' && measurement.points.length === 2) {
+          manager.addDistanceMeasurement(
+            measurement.id,
+            measurement.points[0],
+            measurement.points[1],
+            {
+              id: measurement.id,
+              unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
+              label: measurement.label,
+              createdBy: measurement.createdBy,
+              createdAt: measurement.createdAt,
+            }
+          );
+        } else if (measurement.type === 'area' && measurement.points.length >= 3) {
+          manager.addAreaMeasurement(
+            measurement.id,
+            measurement.points,
+            {
+              id: measurement.id,
+              unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
+              label: measurement.label,
+              createdBy: measurement.createdBy,
+              createdAt: measurement.createdAt,
+            }
+          );
+        }
+        renderedIds.add(measurement.id);
+      }
+    }
+
+    // Remove deleted measurements from scene
+    for (const id of renderedIds) {
+      if (!currentIds.has(id)) {
+        manager.removeMeasurement(id);
+        renderedIds.delete(id);
+      }
+    }
+  }, [state.measurements]);
 
   // Transform mode change handler
   const handleTransformModeChange = useCallback((mode: TransformMode | null) => {
@@ -412,18 +603,32 @@ const ViewerContent = () => {
         case 'g':
           // G for "grab" (translate/move) - Blender convention
           setTransformMode(transformMode === 'translate' ? null : 'translate');
+          setActiveTool(null); // Clear tool for mutual exclusivity
+          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'r':
           // R for rotate - Blender convention
           setTransformMode(transformMode === 'rotate' ? null : 'rotate');
+          setActiveTool(null); // Clear tool for mutual exclusivity
+          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 's':
           // S for scale - Blender convention
           setTransformMode(transformMode === 'scale' ? null : 'scale');
+          setActiveTool(null); // Clear tool for mutual exclusivity
+          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'c':
           // C for comment tool
           setActiveTool(state.activeTool === 'comment' ? null : 'comment');
+          setTransformMode(null); // Hide gizmo for mutual exclusivity
+          clearMeasurementPointSelection(); // Clear point editing
+          break;
+        case 'd':
+          // D for distance tool
+          setActiveTool(state.activeTool === 'distance' ? null : 'distance');
+          setTransformMode(null); // Hide gizmo for mutual exclusivity
+          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'v':
           // V for reset view
@@ -433,16 +638,38 @@ const ViewerContent = () => {
           // T for toggle grid
           toggleGrid();
           break;
+        case 'delete':
+        case 'backspace':
+          // Delete selected measurement or annotation (use refs to avoid TDZ)
+          if (state.selectedMeasurementPoint) {
+            handleMeasurementDeleteRef.current?.(state.selectedMeasurementPoint.measurementId);
+            clearMeasurementPointSelection();
+          } else if (state.selectedAnnotationId) {
+            handleAnnotationDeleteRef.current?.(state.selectedAnnotationId);
+            selectAnnotation(null);
+          }
+          break;
         case 'escape':
-          // Escape to hide gizmo
-          setTransformMode(null);
+          // Escape to cancel pending measurement, hide gizmo, clear point selection, or clear annotation selection
+          if (state.pendingMeasurement) {
+            cancelMeasurement();
+          } else if (state.selectedMeasurementPoint) {
+            clearMeasurementPointSelection();
+            closeCollaborationPanel();
+          } else if (state.selectedAnnotationId) {
+            selectAnnotation(null);
+            closeCollaborationPanel();
+          } else {
+            setTransformMode(null);
+            setActiveTool(null);
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, handleResetView, state.activeTool, state.isAnnotationModalOpen, setActiveTool]);
+  }, [transformMode, toggleGrid, handleResetView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -458,6 +685,21 @@ const ViewerContent = () => {
     };
   }) => {
     if (!scanId) return;
+
+    // Validate position before persisting
+    if (!isValidPosition(data.position)) {
+      // Invalid position - add to local state only with warning
+      addAnnotation({
+        type: data.type,
+        position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+        content: data.content,
+        status: data.status,
+        createdBy: currentUserId,
+        createdByName: user?.name || user?.email || 'You',
+        cameraSnapshot: data.cameraSnapshot,
+      });
+      return;
+    }
 
     setIsSavingAnnotation(true);
 
@@ -547,6 +789,23 @@ const ViewerContent = () => {
       }
     }
   }, [removeAnnotation]);
+  handleAnnotationDeleteRef.current = handleAnnotationDelete;
+
+  // Handle measurement deletion with Supabase persistence
+  const handleMeasurementDelete = useCallback(async (measurementId: string) => {
+    // Remove from local state immediately
+    removeMeasurement(measurementId);
+
+    // Delete from Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await deleteMeasurementService(measurementId);
+      } catch {
+        // Error deleting measurement - already removed locally
+      }
+    }
+  }, [removeMeasurement]);
+  handleMeasurementDeleteRef.current = handleMeasurementDelete;
 
   // Handle annotation reply with Supabase persistence
   const handleAnnotationReply = useCallback(async (annotationId: string, content: string) => {
@@ -575,6 +834,33 @@ const ViewerContent = () => {
   // Handle export
   const handleExport = useCallback(() => {
     setShowSharePanel(true);
+  }, []);
+
+  // Handle measurement point drag start (for direct drag with surface snap)
+  const handleMeasurementPointDragStart = useCallback((point: { measurementId: string; pointIndex: number }) => {
+    setDraggingMeasurementPoint(point);
+  }, []);
+
+  // Handle measurement point drag end
+  const handleMeasurementPointDragEnd = useCallback(() => {
+    setDraggingMeasurementPoint(null);
+  }, []);
+
+  // Handle annotation drag start (for direct drag with surface snap)
+  const handleAnnotationDragStart = useCallback((annotationId: string) => {
+    setDraggingAnnotation(annotationId);
+  }, []);
+
+  // Handle annotation drag end
+  const handleAnnotationDragEnd = useCallback(() => {
+    setDraggingAnnotation(null);
+  }, []);
+
+  // Handle annotation move (update local state - persistence handled on drag end)
+  const handleAnnotationMove = useCallback((annotationId: string, position: THREE.Vector3) => {
+    // The scene manager updates the 3D marker position
+    // The HTML overlay will update automatically on next render
+    // We don't update the context state during drag to avoid re-renders
   }, []);
 
   // Show loading state while fetching data
@@ -618,6 +904,16 @@ const ViewerContent = () => {
           selectedAnnotationId={state.selectedAnnotationId}
           annotations={state.annotations}
           onCameraReady={setCamera}
+          measurements={state.measurements}
+          selectedMeasurementPoint={state.selectedMeasurementPoint}
+          onMeasurementPointMove={(measurementId, pointIndex, newPosition) => {
+            updateMeasurementPoint(measurementId, pointIndex, newPosition);
+          }}
+          draggingMeasurementPoint={draggingMeasurementPoint}
+          onMeasurementPointDragEnd={handleMeasurementPointDragEnd}
+          draggingAnnotation={draggingAnnotation}
+          onAnnotationDragEnd={handleAnnotationDragEnd}
+          onAnnotationMove={handleAnnotationMove}
           onSplatLoadStart={() => {
             setIsLoading(true);
             setLoadProgress(null);
@@ -633,27 +929,74 @@ const ViewerContent = () => {
 
         {/* HTML Annotation Icon Overlay */}
         <AnnotationIconOverlay
-          annotations={state.annotations.map(a => ({
-            data: {
-              id: a.id,
-              scanId: scanId || '',
-              type: a.type,
-              status: a.status,
-              content: a.content,
-              createdBy: a.createdBy,
-              createdAt: a.createdAt,
-              replyCount: a.replies?.length || 0,
-            } as AnnotationData,
-            position: a.position instanceof THREE.Vector3
+          annotations={state.annotations.map(a => {
+            // Get world position from SceneManager (handles transform parenting)
+            const worldPos = sceneManager?.getAnnotationWorldPosition(a.id);
+            const position = worldPos ?? (a.position instanceof THREE.Vector3
               ? a.position
-              : new THREE.Vector3(a.position.x, a.position.y, a.position.z),
-          }))}
+              : new THREE.Vector3(a.position.x, a.position.y, a.position.z));
+            return {
+              data: {
+                id: a.id,
+                scanId: scanId || '',
+                type: a.type,
+                status: a.status,
+                content: a.content,
+                createdBy: a.createdBy,
+                createdAt: a.createdAt,
+                replyCount: a.replies?.length || 0,
+              } as AnnotationData,
+              position,
+            };
+          })}
           camera={camera}
           containerRef={viewerContainerRef}
           hoveredId={state.hoveredAnnotationId}
           selectedId={state.selectedAnnotationId}
-          onAnnotationClick={(ann) => selectAnnotation(ann.id)}
+          onAnnotationClick={(ann) => {
+            selectAnnotation(ann.id);
+            openCollaborationPanel('annotations');
+          }}
           onAnnotationHover={(ann) => hoverAnnotation(ann?.id ?? null)}
+          onAnnotationDragStart={(ann) => handleAnnotationDragStart(ann.id)}
+        />
+
+        {/* HTML Measurement Point Overlay */}
+        <MeasurementIconOverlay
+          points={state.measurements.flatMap(m =>
+            m.points.map((p, i) => {
+              // Get world position from SceneManager (handles transform parenting)
+              const worldPos = sceneManager?.getMeasurementPointWorldPosition(m.id, i);
+              const position = worldPos ?? (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p.x, p.y, p.z));
+              return {
+                measurementId: m.id,
+                pointIndex: i,
+                position,
+                type: m.type as 'distance' | 'area' | 'angle',
+              } as MeasurementPointData;
+            })
+          )}
+          camera={camera}
+          containerRef={viewerContainerRef}
+          hoveredPointId={state.hoveredMeasurementId ? `${state.hoveredMeasurementId}-0` : null}
+          selectedPointId={state.selectedMeasurementId ? `${state.selectedMeasurementId}-0` : null}
+          editingPointId={state.selectedMeasurementPoint
+            ? `${state.selectedMeasurementPoint.measurementId}-${state.selectedMeasurementPoint.pointIndex}`
+            : null
+          }
+          onPointClick={(point) => {
+            // Select the measurement point for editing (shows gizmo)
+            selectMeasurementPoint(point.measurementId, point.pointIndex);
+            // Clear any active tool to avoid conflicts
+            setActiveTool(null);
+            // Open collaboration panel to measurements tab
+            openCollaborationPanel('measurements');
+          }}
+          onPointHover={(point) => hoverMeasurement(point?.measurementId ?? null)}
+          onPointDragStart={(point) => handleMeasurementPointDragStart({
+            measurementId: point.measurementId,
+            pointIndex: point.pointIndex,
+          })}
         />
       </div>
 
@@ -673,14 +1016,34 @@ const ViewerContent = () => {
         onShare={handleShare}
       />
 
-      {/* Sidebar */}
-      <ViewerSidebar
-        measurements={state.measurements}
-        annotations={state.annotations}
-        permissions={permissions}
-        onDeleteMeasurement={removeMeasurement}
-        onDeleteAnnotation={handleAnnotationDelete}
-      />
+      {/* Collaboration Panel (replaces ViewerSidebar and AnnotationPanel) */}
+      {state.isCollaborationPanelOpen && (
+        <div className="absolute right-0 top-16 bottom-0 w-96 z-20">
+          <CollaborationPanel
+            activeTab={state.activeCollaborationTab}
+            onTabChange={setActiveCollaborationTab}
+            onClose={closeCollaborationPanel}
+            activeTool={state.activeTool}
+            annotations={state.annotations}
+            selectedAnnotationId={state.selectedAnnotationId}
+            currentUserId={currentUserId}
+            canEditAnnotations={permissions.canAnnotate}
+            onSelectAnnotation={(ann) => selectAnnotation(ann.id)}
+            onAnnotationStatusChange={handleAnnotationStatusChange}
+            onDeleteAnnotation={handleAnnotationDelete}
+            onAddAnnotationReply={handleAnnotationReply}
+            onAddAnnotation={() => {
+              setActiveTool('comment');
+              closeCollaborationPanel();
+            }}
+            measurements={state.measurements}
+            selectedMeasurementId={state.selectedMeasurementId}
+            permissions={permissions}
+            onSelectMeasurement={selectMeasurement}
+            onDeleteMeasurement={handleMeasurementDelete}
+          />
+        </div>
+      )}
 
       {/* Toolbar */}
       <ViewerToolbar
@@ -701,10 +1064,13 @@ const ViewerContent = () => {
         canSaveTransform={canSaveTransform}
         isSavingTransform={isSavingTransform}
         onOpenAnnotationPanel={() => {
-          setActiveTool('comment');
-          openAnnotationPanel();
+          openCollaborationPanel('annotations');
         }}
         annotationCount={state.annotations.length}
+        measurementCount={state.measurements.length}
+        onOpenMeasurementPanel={() => {
+          openCollaborationPanel('measurements');
+        }}
       />
 
       {/* Share Panel */}
@@ -716,31 +1082,6 @@ const ViewerContent = () => {
         scanId={scanId || ''}
       />
 
-      {/* Annotation Panel */}
-      {state.isAnnotationPanelOpen && (
-        <div className="absolute right-0 top-16 bottom-0 w-80 z-20">
-          <AnnotationPanel
-            annotation={
-              state.selectedAnnotationId
-                ? state.annotations.find(a => a.id === state.selectedAnnotationId) ?? null
-                : null
-            }
-            annotations={state.annotations}
-            currentUserId={currentUserId}
-            canEdit={permissions.canAnnotate}
-            onClose={closeAnnotationPanel}
-            onSelectAnnotation={(ann) => selectAnnotation(ann.id)}
-            onStatusChange={handleAnnotationStatusChange}
-            onDelete={handleAnnotationDelete}
-            onAddReply={handleAnnotationReply}
-            mode={state.selectedAnnotationId ? 'detail' : 'list'}
-            onAddAnnotation={() => {
-              setActiveTool('comment');
-              closeAnnotationPanel();
-            }}
-          />
-        </div>
-      )}
 
       {/* Annotation Modal for creating new annotations */}
       <AnnotationModal
