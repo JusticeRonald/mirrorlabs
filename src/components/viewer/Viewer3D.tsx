@@ -5,7 +5,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
-import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis } from '@/types/viewer';
+import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
 interface Viewer3DProps {
@@ -33,6 +33,18 @@ interface Viewer3DProps {
   onTransformChange?: (transform: SplatTransform) => void;
   /** Callback to expose the resetView function to parent */
   onResetView?: (resetFn: () => void) => void;
+  /** Callback when annotation marker is hovered */
+  onAnnotationHover?: (annotationId: string | null) => void;
+  /** Callback when annotation marker is clicked */
+  onAnnotationSelect?: (annotationId: string | null) => void;
+  /** Currently hovered annotation ID (for external control) */
+  hoveredAnnotationId?: string | null;
+  /** Currently selected annotation ID (for external control) */
+  selectedAnnotationId?: string | null;
+  /** Annotations to render as 3D markers (deprecated - using HTML overlay instead) */
+  annotations?: Annotation[];
+  /** Callback to expose the camera to parent for HTML annotation overlay */
+  onCameraReady?: (camera: THREE.PerspectiveCamera) => void;
 }
 
 const Viewer3D = ({
@@ -55,6 +67,12 @@ const Viewer3D = ({
   transformMode = null,
   onTransformChange,
   onResetView,
+  onAnnotationHover,
+  onAnnotationSelect,
+  hoveredAnnotationId,
+  selectedAnnotationId,
+  annotations,
+  onCameraReady,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -80,6 +98,11 @@ const Viewer3D = ({
   const initialTransformRef = useRef(initialTransform);
   const onTransformChangeRef = useRef(onTransformChange);
   const onResetViewRef = useRef(onResetView);
+  const onAnnotationHoverRef = useRef(onAnnotationHover);
+  const onAnnotationSelectRef = useRef(onAnnotationSelect);
+  const activeToolRef = useRef(activeTool);
+  const onPointSelectRef = useRef(onPointSelect);
+  const onCameraReadyRef = useRef(onCameraReady);
 
   // Keep callback refs updated
   useEffect(() => {
@@ -91,12 +114,16 @@ const Viewer3D = ({
     initialTransformRef.current = initialTransform;
     onTransformChangeRef.current = onTransformChange;
     onResetViewRef.current = onResetView;
+    onAnnotationHoverRef.current = onAnnotationHover;
+    onAnnotationSelectRef.current = onAnnotationSelect;
+    activeToolRef.current = activeTool;
+    onPointSelectRef.current = onPointSelect;
+    onCameraReadyRef.current = onCameraReady;
   });
 
   // Handle point selection via raycasting
   const handleClick = useCallback((event: MouseEvent) => {
-    if (!onPointSelect || !containerRef.current || !cameraRef.current || !sceneManagerRef.current) return;
-    if (!activeTool || !['distance', 'area', 'angle', 'pin', 'comment'].includes(activeTool)) return;
+    if (!containerRef.current || !cameraRef.current || !sceneManagerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
     const pointer = new THREE.Vector2(
@@ -104,12 +131,60 @@ const Viewer3D = ({
       -((event.clientY - rect.top) / rect.height) * 2 + 1
     );
 
-    const intersections = sceneManagerRef.current.raycast(cameraRef.current, pointer);
-
-    if (intersections.length > 0) {
-      onPointSelect(intersections[0].point.clone());
+    // First check if clicking on an annotation marker
+    const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
+    if (annotationId) {
+      onAnnotationSelectRef.current?.(annotationId);
+      return;
     }
-  }, [onPointSelect, activeTool]);
+
+    // If using a measurement/annotation tool, pick splat surface
+    const currentTool = activeToolRef.current;
+    const pointSelectCallback = onPointSelectRef.current;
+    if (pointSelectCallback && currentTool && ['distance', 'area', 'angle', 'pin', 'comment'].includes(currentTool)) {
+      // Try splat picking first
+      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
+      if (pickResult) {
+        pointSelectCallback(pickResult.position.clone());
+        return;
+      }
+
+      // Fall back to regular raycasting for non-splat content
+      const intersections = sceneManagerRef.current.raycast(cameraRef.current, pointer);
+      if (intersections.length > 0) {
+        pointSelectCallback(intersections[0].point.clone());
+      }
+    }
+  }, []);
+
+  // Handle mouse move for annotation hover detection
+  const handleMouseMove = useCallback((event: MouseEvent) => {
+    if (!containerRef.current || !cameraRef.current || !sceneManagerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    // Check if hovering over an annotation marker
+    const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
+    onAnnotationHoverRef.current?.(annotationId);
+
+    // Update cursor style based on: active tool > hover state > default
+    if (containerRef.current) {
+      const currentTool = activeToolRef.current;
+      const isPlacementTool = currentTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(currentTool);
+
+      if (isPlacementTool) {
+        containerRef.current.style.cursor = 'crosshair';
+      } else if (annotationId) {
+        containerRef.current.style.cursor = 'pointer';
+      } else {
+        containerRef.current.style.cursor = 'default';
+      }
+    }
+  }, []);
 
   // Update view mode (for non-splat content)
   useEffect(() => {
@@ -221,6 +296,9 @@ const Viewer3D = ({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
+    // Notify parent that camera is ready (for HTML annotation overlay)
+    onCameraReadyRef.current?.(camera);
+
     // Renderer setup - note: antialias:false is recommended for Spark
     const renderer = new THREE.WebGLRenderer({
       antialias: !splatUrl, // Disable antialiasing for splat rendering
@@ -261,7 +339,7 @@ const Viewer3D = ({
         if (splatMesh) {
           rotationFeedbackRef.current?.startRotation(
             activeAxis,
-            { x: splatMesh.rotation.x, y: splatMesh.rotation.y, z: splatMesh.rotation.z },
+            splatMesh.quaternion.clone(),
             splatMesh.position.clone(),
             0.75  // Match transformControls.setSize(0.75)
           );
@@ -283,7 +361,10 @@ const Viewer3D = ({
 
           // Update rotation feedback if active
           if (transformControls.mode === 'rotate') {
-            rotationFeedbackRef.current?.updateRotation(transform.rotation);
+            const splatMesh = sceneManagerRef.current?.getSplatMesh();
+            if (splatMesh) {
+              rotationFeedbackRef.current?.updateRotation(splatMesh.quaternion.clone());
+            }
           }
         }
       }
@@ -363,6 +444,9 @@ const Viewer3D = ({
       sceneManager.addObject('floor', floor);
     }
 
+    // Initialize picking system for splat and annotation picking
+    sceneManager.initPickingSystem(renderer);
+
     // Notify parent that scene is ready
     if (onSceneReady) {
       onSceneReady(sceneManager);
@@ -404,13 +488,17 @@ const Viewer3D = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // Click handler for point selection
+    // Click handler for point selection and annotation selection
     renderer.domElement.addEventListener('click', handleClick);
+
+    // Mousemove handler for annotation hover detection
+    renderer.domElement.addEventListener('mousemove', handleMouseMove);
 
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
+      renderer.domElement.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('keyup', handleKeyUp);
       renderer.domElement.removeEventListener('click', handleClick);
       cancelAnimationFrame(animationFrameId);
@@ -427,7 +515,7 @@ const Viewer3D = ({
         containerRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [scanId, modelUrl, onSceneReady, handleClick, enableZoom, splatUrl]);
+  }, [scanId, modelUrl, onSceneReady, handleClick, handleMouseMove, enableZoom, splatUrl]);
 
   // Load splat when URL changes (must run AFTER main scene setup)
   useEffect(() => {
@@ -579,6 +667,20 @@ const Viewer3D = ({
   useEffect(() => {
     onResetViewRef.current?.(resetView);
   }, [resetView]);
+
+  // Note: 3D annotation marker sync removed - now using HTML overlay via AnnotationIconOverlay
+
+  // Update cursor immediately when tool changes
+  useEffect(() => {
+    if (containerRef.current) {
+      const isPlacementTool = activeTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(activeTool);
+      if (isPlacementTool) {
+        containerRef.current.style.cursor = 'crosshair';
+      } else {
+        containerRef.current.style.cursor = 'default';
+      }
+    }
+  }, [activeTool]);
 
   return (
     <div
