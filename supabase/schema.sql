@@ -9,7 +9,7 @@
 CREATE TYPE user_role AS ENUM ('owner', 'editor', 'viewer');
 CREATE TYPE scan_status AS ENUM ('uploading', 'processing', 'ready', 'error');
 CREATE TYPE annotation_type AS ENUM ('pin', 'comment', 'markup');
-CREATE TYPE annotation_status AS ENUM ('open', 'resolved');
+CREATE TYPE annotation_status AS ENUM ('open', 'in_progress', 'resolved', 'reopened', 'archived');
 CREATE TYPE measurement_type AS ENUM ('distance', 'area', 'angle');
 CREATE TYPE measurement_unit AS ENUM ('ft', 'm', 'in', 'cm');
 CREATE TYPE industry_type AS ENUM ('construction', 'real-estate', 'cultural');
@@ -109,10 +109,14 @@ CREATE TABLE scans (
   thumbnail_url TEXT,
   status scan_status DEFAULT 'uploading',
   error_message TEXT,
+  orientation_json JSONB DEFAULT NULL,  -- Stored as { x: number, y: number, z: number } (radians)
   created_by UUID NOT NULL REFERENCES profiles(id),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration: Add orientation_json to existing scans table (run separately if table already exists)
+-- ALTER TABLE scans ADD COLUMN orientation_json JSONB DEFAULT NULL;
 
 -- Annotations (3D markers on scans)
 CREATE TABLE annotations (
@@ -173,6 +177,27 @@ CREATE TABLE comments (
   parent_id UUID REFERENCES comments(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   mentions TEXT[] DEFAULT '{}',
+  status TEXT DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'reopened', 'archived')),
+  root_comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+  thread_depth INTEGER DEFAULT 0,
+  created_by UUID NOT NULL REFERENCES profiles(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Markup types for drawing tools
+CREATE TYPE markup_type AS ENUM ('freehand', 'circle', 'rectangle', 'arrow', 'cloud', 'text');
+
+-- Markups (2D screen-space drawings on scans)
+CREATE TABLE markups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scan_id UUID NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  type markup_type NOT NULL DEFAULT 'freehand',
+  strokes JSONB NOT NULL,  -- Array of stroke points [{x, y}]
+  camera_snapshot JSONB NOT NULL,  -- Camera position/target/fov when markup was created
+  style JSONB NOT NULL DEFAULT '{"color": "#EF4444", "lineWidth": 2, "opacity": 1}',
+  label TEXT,
+  status TEXT DEFAULT 'visible' CHECK (status IN ('visible', 'hidden', 'archived')),
   created_by UUID NOT NULL REFERENCES profiles(id),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -208,6 +233,9 @@ CREATE INDEX idx_measurements_scan ON measurements(scan_id);
 CREATE INDEX idx_camera_waypoints_scan ON camera_waypoints(scan_id);
 CREATE INDEX idx_comments_scan ON comments(scan_id);
 CREATE INDEX idx_comments_annotation ON comments(annotation_id);
+CREATE INDEX idx_comments_root ON comments(root_comment_id);
+CREATE INDEX idx_markups_scan ON markups(scan_id);
+CREATE INDEX idx_markups_created_by ON markups(created_by);
 CREATE INDEX idx_activity_log_project ON activity_log(project_id);
 
 -- ============================================================================
@@ -274,6 +302,10 @@ CREATE TRIGGER update_comments_updated_at
   BEFORE UPDATE ON comments
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+CREATE TRIGGER update_markups_updated_at
+  BEFORE UPDATE ON markups
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================================
@@ -291,6 +323,7 @@ ALTER TABLE measurements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE camera_waypoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE markups ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: Users can read all profiles, update their own
 CREATE POLICY "Profiles are viewable by all authenticated users"
@@ -589,6 +622,48 @@ CREATE POLICY "Comment creators can update their comments"
 
 CREATE POLICY "Comment creators can delete their comments"
   ON comments FOR DELETE
+  TO authenticated
+  USING (created_by = auth.uid());
+
+-- Markups
+CREATE POLICY "Markups visible to project members"
+  ON markups FOR SELECT
+  TO authenticated
+  USING (
+    scan_id IN (
+      SELECT s.id FROM scans s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.created_by = auth.uid()
+      UNION
+      SELECT s.id FROM scans s
+      JOIN project_members pm ON s.project_id = pm.project_id
+      WHERE pm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Project editors can create markups"
+  ON markups FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    created_by = auth.uid()
+    AND scan_id IN (
+      SELECT s.id FROM scans s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.created_by = auth.uid()
+      UNION
+      SELECT s.id FROM scans s
+      JOIN project_members pm ON s.project_id = pm.project_id
+      WHERE pm.user_id = auth.uid() AND pm.role IN ('owner', 'editor')
+    )
+  );
+
+CREATE POLICY "Markup creators can update their markups"
+  ON markups FOR UPDATE
+  TO authenticated
+  USING (created_by = auth.uid());
+
+CREATE POLICY "Markup creators can delete their markups"
+  ON markups FOR DELETE
   TO authenticated
   USING (created_by = auth.uid());
 

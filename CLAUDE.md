@@ -119,16 +119,27 @@ projects (id, workspace_id, name, description, industry, thumbnail_url, is_archi
 project_members (project_id, user_id, role)
 scans (id, project_id, name, file_url, file_type, file_size, splat_count, status)
 
--- Collaboration
+-- Collaboration (Annotations)
 annotations (id, scan_id, type, position_x/y/z, content, status, created_by)
 annotation_replies (id, annotation_id, content, created_by)
 measurements (id, scan_id, type, points_json, value, unit, label, created_by)
 camera_waypoints (id, scan_id, name, position_json, target_json, fov, thumbnail_url)
 
--- Activity
+-- Activity & General Discussion (Future)
 comments (id, scan_id, annotation_id, parent_id, content, mentions[], created_by)
 activity_log (id, project_id, action, entity_type, entity_id, metadata)
 ```
+
+#### Collaboration Table Clarification
+| Table | Purpose | Usage |
+|-------|---------|-------|
+| `annotations` | 3D-positioned markers on scans | Main table for viewer annotations (pins, comments with XYZ position) |
+| `annotation_replies` | Threaded replies to annotations | Used for discussion threads on specific annotations |
+| `comments` | (Future) General scan discussion | Reserved for activity feed / scan-level discussion without 3D position |
+| `measurements` | Distance, area, angle measurements | 3D measurement points with calculated values |
+| `camera_waypoints` | Saved camera views | Named camera positions for tours / saved views |
+
+**Note:** The `annotations` table stores 3D-positioned comments (with `position_x/y/z`). The `comments` table is reserved for future general discussion features without 3D positioning. Do not confuse the two tables.
 
 ### Feature Priority Matrix
 | Priority | Feature | Status |
@@ -137,10 +148,10 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 | **P0** | Database/Persistence | ✅ Implemented |
 | **P0** | File Upload | ✅ Implemented |
 | **P1** | Functional Measurements | Pending |
-| **P1** | Annotations/Comments | ✅ Service Layer Ready |
+| **P1** | Annotations/Comments | ✅ Implemented (Jan 2026) |
 | **P1** | Camera Waypoints (Saved Views) | ✅ Service Layer Ready |
 | **P2** | SOG Compression | Future |
-| **P2** | Real-time Collaboration | Future |
+| **P2** | Real-time Collaboration | ✅ Implemented (Jan 2026) |
 
 ### Implementation Phases
 
@@ -154,7 +165,8 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 
 **Phase 2: Core Collaboration**
 - Functional measurement tool
-- Annotation system + comments
+- ✅ Annotation system + persistence to Supabase
+- ✅ Real-time annotation sync across users
 - Camera waypoints with transitions
 - Basic sharing (public links)
 
@@ -331,10 +343,13 @@ Three account types with different permission levels:
 - ✅ Admin UI: Workspaces (business) + People pages
 - ✅ Code review cleanup (January 24, 2026)
 - ✅ Security review & cleanup (January 25, 2026)
+- ✅ WASM raycasting guard fix for annotation placement (January 25, 2026)
+- ✅ Annotation persistence to Supabase (January 26, 2026)
+- ✅ Real-time annotation sync via Supabase Realtime (January 26, 2026)
 
 ### Next Priority (P1 Features)
 - [ ] Functional measurement tool (distance, area, angle)
-- [ ] Annotation system with threading and replies
+- [x] Annotation system with persistence and real-time sync
 - [ ] Camera waypoints with smooth transitions
 - [ ] Basic sharing (public links)
 

@@ -7,8 +7,10 @@ import {
 import type {
   GaussianSplatRenderer,
   SplatMetadata,
-  SplatLoadProgress
+  SplatLoadProgress,
+  SplatLoadOptions
 } from './GaussianSplatRenderer';
+import { DEFAULT_SPLAT_ORIENTATION, DEFAULT_SPLAT_TRANSFORM, type SplatOrientation, type SplatTransform } from '@/types/viewer';
 
 /**
  * Spark-based implementation of GaussianSplatRenderer.
@@ -26,6 +28,9 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     this.renderer = renderer;
     this.scene = scene;
     this.clock = new THREE.Clock();
+
+    // Note: WASM initialization is handled internally by Spark library when first SplatMesh is created
+    // Manual staticInitialize() was causing "failed to match magic number" errors
     this.initializeSparkRenderer();
   }
 
@@ -43,7 +48,8 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
 
   async loadFromUrl(
     url: string,
-    onProgress?: (progress: SplatLoadProgress) => void
+    onProgress?: (progress: SplatLoadProgress) => void,
+    options?: SplatLoadOptions
   ): Promise<SplatMetadata> {
     const startTime = performance.now();
 
@@ -80,8 +86,17 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     // Add the splat mesh to the scene
     this.scene.add(this.splatMesh);
 
-    // Fix orientation: rotate 180 degrees around X-axis to correct upside-down splats
-    // This compensates for coordinate system differences (SuperSplat/NeRF conventions vs Three.js)
+    // Apply initial transform (full transform takes precedence over legacy orientation)
+    if (options?.initialTransform) {
+      const t = options.initialTransform;
+      this.splatMesh.position.set(t.position.x, t.position.y, t.position.z);
+      this.splatMesh.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z, 'XYZ');
+      this.splatMesh.scale.set(t.scale.x, t.scale.y, t.scale.z);
+    } else {
+      // Apply initial orientation (defaults to 180° X-axis rotation to fix common convention issues)
+      const orientation = options?.initialOrientation ?? DEFAULT_SPLAT_ORIENTATION;
+      this.splatMesh.rotation.set(orientation.x, orientation.y, orientation.z, 'XYZ');
+    }
 
     // Simulate progress while loading (since Spark doesn't expose download progress)
     let progressInterval: ReturnType<typeof setInterval> | undefined;
@@ -173,6 +188,63 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
   update(_camera: THREE.Camera, _deltaTime: number): void {
     // With autoUpdate: true, SparkRenderer automatically updates during renderer.render()
     // No manual update needed - the incorrect viewToWorld parameter was causing render issues
+  }
+
+  setOrientation(orientation: SplatOrientation): void {
+    if (this.splatMesh) {
+      this.splatMesh.rotation.set(orientation.x, orientation.y, orientation.z, 'XYZ');
+    }
+  }
+
+  getOrientation(): SplatOrientation | null {
+    if (!this.splatMesh) return null;
+    return {
+      x: this.splatMesh.rotation.x,
+      y: this.splatMesh.rotation.y,
+      z: this.splatMesh.rotation.z,
+    };
+  }
+
+  setTransform(transform: SplatTransform): void {
+    if (this.splatMesh) {
+      this.splatMesh.position.set(
+        transform.position.x,
+        transform.position.y,
+        transform.position.z
+      );
+      this.splatMesh.rotation.set(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        'XYZ'
+      );
+      this.splatMesh.scale.set(
+        transform.scale.x,
+        transform.scale.y,
+        transform.scale.z
+      );
+    }
+  }
+
+  getTransform(): SplatTransform | null {
+    if (!this.splatMesh) return null;
+    return {
+      position: {
+        x: this.splatMesh.position.x,
+        y: this.splatMesh.position.y,
+        z: this.splatMesh.position.z,
+      },
+      rotation: {
+        x: this.splatMesh.rotation.x,
+        y: this.splatMesh.rotation.y,
+        z: this.splatMesh.rotation.z,
+      },
+      scale: {
+        x: this.splatMesh.scale.x,
+        y: this.splatMesh.scale.y,
+        z: this.splatMesh.scale.z,
+      },
+    };
   }
 
   dispose(): void {

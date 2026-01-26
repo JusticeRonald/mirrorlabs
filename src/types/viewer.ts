@@ -1,9 +1,121 @@
 import * as THREE from 'three';
 
+/**
+ * Splat orientation in Euler angles (radians)
+ * @deprecated Use SplatTransform instead for full transform support
+ */
+export interface SplatOrientation {
+  x: number;  // radians
+  y: number;
+  z: number;
+}
+
+/**
+ * 3D vector for position and scale
+ */
+export interface Vector3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Full transform for splat mesh (position, rotation, scale)
+ */
+export interface SplatTransform {
+  position: Vector3D;
+  rotation: Vector3D;  // Euler angles in radians
+  scale: Vector3D;
+}
+
+/**
+ * Transform modes for the gizmo
+ */
+export type TransformMode = 'translate' | 'rotate' | 'scale';
+
+/**
+ * Active axis being manipulated by the transform gizmo
+ * Matches TransformControls.axis values from Three.js
+ */
+export type TransformAxis = 'X' | 'Y' | 'Z' | 'XY' | 'XZ' | 'YZ' | 'XYZ' | null;
+
+/**
+ * Default transform: 180° X-axis rotation to fix common coordinate convention issues
+ * (e.g., SuperSplat/NeRF conventions vs Three.js Y-up convention)
+ */
+export const DEFAULT_SPLAT_TRANSFORM: SplatTransform = {
+  position: { x: 0, y: 0, z: 0 },
+  rotation: { x: Math.PI, y: 0, z: 0 },  // 180° X-axis rotation
+  scale: { x: 1, y: 1, z: 1 },
+};
+
+/**
+ * Default orientation: 180° X-axis rotation to fix common coordinate convention issues
+ * (e.g., SuperSplat/NeRF conventions vs Three.js Y-up convention)
+ * @deprecated Use DEFAULT_SPLAT_TRANSFORM instead
+ */
+export const DEFAULT_SPLAT_ORIENTATION: SplatOrientation = {
+  x: Math.PI,  // 180° X-axis rotation
+  y: 0,
+  z: 0,
+};
+
+/**
+ * Convert legacy SplatOrientation to full SplatTransform
+ */
+export function orientationToTransform(orientation: SplatOrientation): SplatTransform {
+  return {
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: orientation.x, y: orientation.y, z: orientation.z },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+}
+
+/**
+ * Extract orientation from SplatTransform (for backward compatibility)
+ */
+export function transformToOrientation(transform: SplatTransform): SplatOrientation {
+  return {
+    x: transform.rotation.x,
+    y: transform.rotation.y,
+    z: transform.rotation.z,
+  };
+}
+
+/**
+ * Check if stored data is legacy orientation or full transform
+ */
+export function isLegacyOrientation(data: unknown): data is SplatOrientation {
+  if (!data || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.x === 'number' &&
+    typeof obj.y === 'number' &&
+    typeof obj.z === 'number' &&
+    !('position' in obj) &&
+    !('rotation' in obj) &&
+    !('scale' in obj)
+  );
+}
+
+/**
+ * Check if stored data is full SplatTransform
+ */
+export function isSplatTransform(data: unknown): data is SplatTransform {
+  if (!data || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.position === 'object' &&
+    typeof obj.rotation === 'object' &&
+    typeof obj.scale === 'object'
+  );
+}
+
 export type MeasurementType = 'distance' | 'area' | 'angle';
 export type AnnotationType = 'pin' | 'comment' | 'markup';
+export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
+export type MarkupToolType = 'freehand' | 'circle' | 'rectangle' | 'arrow' | 'cloud' | 'text' | null;
 export type ViewMode = 'solid' | 'wireframe' | 'points';
-export type NavigationTool = 'pan' | 'orbit' | 'zoom';
 
 /**
  * Supported splat file formats
@@ -60,9 +172,14 @@ export interface Annotation {
   type: AnnotationType;
   position: THREE.Vector3;
   content: string;
+  status: AnnotationStatus;
   createdAt: string;
   createdBy: string;
+  /** Display name of the creator (resolved from profile) */
+  createdByName?: string;
   replies?: AnnotationReply[];
+  /** Camera position when annotation was created (for fly-to) */
+  cameraSnapshot?: CameraState;
 }
 
 export interface AnnotationReply {
@@ -70,6 +187,8 @@ export interface AnnotationReply {
   content: string;
   createdAt: string;
   createdBy: string;
+  /** Display name of the creator (resolved from profile) */
+  createdByName?: string;
 }
 
 /**
@@ -107,6 +226,17 @@ export interface ViewerState {
   annotations: Annotation[];
   savedViews: SavedView[];
   activeSavedViewId: string | null;
+
+  // Annotation state
+  selectedAnnotationId: string | null;
+  hoveredAnnotationId: string | null;
+  isAnnotationPanelOpen: boolean;
+  isAnnotationModalOpen: boolean;
+  pendingAnnotationPosition: THREE.Vector3 | null;
+
+  // Markup state
+  activeMarkupTool: MarkupToolType;
+  isDrawingMode: boolean;
 
   // Splat loading state
   splatLoadingState: SplatLoadingState;
@@ -146,6 +276,17 @@ export const defaultViewerState: ViewerState = {
   savedViews: [],
   activeSavedViewId: null,
 
+  // Annotation state
+  selectedAnnotationId: null,
+  hoveredAnnotationId: null,
+  isAnnotationPanelOpen: false,
+  isAnnotationModalOpen: false,
+  pendingAnnotationPosition: null,
+
+  // Markup state
+  activeMarkupTool: null,
+  isDrawingMode: false,
+
   // Splat loading state
   splatLoadingState: 'idle',
   splatLoadProgress: null,
@@ -165,10 +306,7 @@ export interface ToolDefinition {
 
 export const viewerTools: ToolDefinition[] = [
   // Navigate
-  { id: 'pan', name: 'Pan', icon: 'Hand', group: 'navigate', shortcut: 'P' },
-  { id: 'orbit', name: 'Orbit', icon: 'RotateCcw', group: 'navigate', shortcut: 'O' },
-  { id: 'zoom', name: 'Zoom', icon: 'ZoomIn', group: 'navigate', shortcut: 'Z' },
-  { id: 'reset', name: 'Reset View', icon: 'Maximize', group: 'navigate', shortcut: 'R' },
+  { id: 'reset', name: 'Reset View', icon: 'Maximize', group: 'navigate', shortcut: 'V' },
 
   // Measure
   { id: 'distance', name: 'Distance', icon: 'Ruler', group: 'measure', requiresPermission: 'canMeasure', shortcut: 'D' },
@@ -181,9 +319,7 @@ export const viewerTools: ToolDefinition[] = [
 
   // View
   { id: 'wireframe', name: 'Wireframe', icon: 'Box', group: 'view', shortcut: 'W' },
-  { id: 'section', name: 'Section', icon: 'Scissors', group: 'view' },
-  { id: 'layers', name: 'Layers', icon: 'Layers', group: 'view', shortcut: 'L' },
-  { id: 'savedViews', name: 'Saved Views', icon: 'Camera', group: 'view', shortcut: 'V' },
+  { id: 'grid', name: 'Toggle Grid', icon: 'Grid3X3', group: 'view', shortcut: 'T' },
 
   // Export
   { id: 'download', name: 'Download', icon: 'Download', group: 'export', requiresPermission: 'canExport' },

@@ -58,17 +58,10 @@ const AppNavigation = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo - links to appropriate home */}
           <Link to={isStaff ? "/admin" : "/projects"} className="flex items-center gap-2">
-            <img
-              src="/icon.svg"
-              alt="Mirror Labs"
-              className="w-8 h-8"
-            />
-            <span className="text-lg font-semibold text-foreground">
-              Mirror Labs
-              {isStaff && (
-                <span className="text-muted-foreground font-normal"> · Admin</span>
-              )}
-            </span>
+            <img src="/logo.svg" alt="Mirror Labs" className="h-7" />
+            {isStaff && (
+              <span className="text-muted-foreground text-sm font-normal">· Admin</span>
+            )}
           </Link>
 
           {/* Desktop Navigation */}

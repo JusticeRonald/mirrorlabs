@@ -11,6 +11,8 @@ import {
   SplatLoadProgress,
   SplatSceneMetadata,
   SplatLoadError,
+  AnnotationStatus,
+  MarkupToolType,
 } from '@/types/viewer';
 import { UserRole, ROLE_PERMISSIONS, RolePermissions } from '@/types/user';
 
@@ -37,7 +39,21 @@ interface ViewerContextType {
   addAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt'>) => void;
   removeAnnotation: (id: string) => void;
   addAnnotationReply: (annotationId: string, content: string, createdBy: string) => void;
+  updateAnnotationStatus: (annotationId: string, status: AnnotationStatus) => void;
   clearAnnotations: () => void;
+  loadAnnotations: (annotations: Annotation[]) => void;
+
+  // Annotation interaction
+  selectAnnotation: (id: string | null) => void;
+  hoverAnnotation: (id: string | null) => void;
+  openAnnotationPanel: () => void;
+  closeAnnotationPanel: () => void;
+  openAnnotationModal: (position: THREE.Vector3) => void;
+  closeAnnotationModal: () => void;
+
+  // Markup/Drawing
+  setActiveMarkupTool: (tool: MarkupToolType) => void;
+  setDrawingMode: (enabled: boolean) => void;
 
   // Saved Views
   addSavedView: (view: Omit<SavedView, 'id' | 'createdAt' | 'sortOrder'>) => void;
@@ -129,6 +145,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       annotations: [...prev.annotations, newAnnotation],
+      // Close modal and clear pending position after adding
+      isAnnotationModalOpen: false,
+      pendingAnnotationPosition: null,
     }));
   }, []);
 
@@ -136,6 +155,8 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       annotations: prev.annotations.filter(a => a.id !== id),
+      // Clear selection if removed
+      selectedAnnotationId: prev.selectedAnnotationId === id ? null : prev.selectedAnnotationId,
     }));
   }, []);
 
@@ -162,8 +183,81 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     }));
   }, []);
 
+  const updateAnnotationStatus = useCallback((annotationId: string, status: AnnotationStatus) => {
+    setState(prev => ({
+      ...prev,
+      annotations: prev.annotations.map(a =>
+        a.id === annotationId ? { ...a, status } : a
+      ),
+    }));
+  }, []);
+
   const clearAnnotations = useCallback(() => {
-    setState(prev => ({ ...prev, annotations: [] }));
+    setState(prev => ({
+      ...prev,
+      annotations: [],
+      selectedAnnotationId: null,
+      hoveredAnnotationId: null,
+    }));
+  }, []);
+
+  const loadAnnotations = useCallback((annotations: Annotation[]) => {
+    setState(prev => ({ ...prev, annotations }));
+  }, []);
+
+  // Annotation interaction
+  const selectAnnotation = useCallback((id: string | null) => {
+    setState(prev => ({
+      ...prev,
+      selectedAnnotationId: id,
+      // Open panel when selecting an annotation
+      isAnnotationPanelOpen: id !== null ? true : prev.isAnnotationPanelOpen,
+    }));
+  }, []);
+
+  const hoverAnnotation = useCallback((id: string | null) => {
+    setState(prev => ({ ...prev, hoveredAnnotationId: id }));
+  }, []);
+
+  const openAnnotationPanel = useCallback(() => {
+    setState(prev => ({ ...prev, isAnnotationPanelOpen: true }));
+  }, []);
+
+  const closeAnnotationPanel = useCallback(() => {
+    setState(prev => ({ ...prev, isAnnotationPanelOpen: false }));
+  }, []);
+
+  const openAnnotationModal = useCallback((position: THREE.Vector3) => {
+    setState(prev => ({
+      ...prev,
+      isAnnotationModalOpen: true,
+      pendingAnnotationPosition: position,
+    }));
+  }, []);
+
+  const closeAnnotationModal = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      isAnnotationModalOpen: false,
+      pendingAnnotationPosition: null,
+    }));
+  }, []);
+
+  // Markup/Drawing
+  const setActiveMarkupTool = useCallback((tool: MarkupToolType) => {
+    setState(prev => ({
+      ...prev,
+      activeMarkupTool: tool,
+      isDrawingMode: tool !== null,
+    }));
+  }, []);
+
+  const setDrawingMode = useCallback((enabled: boolean) => {
+    setState(prev => ({
+      ...prev,
+      isDrawingMode: enabled,
+      activeMarkupTool: enabled ? prev.activeMarkupTool : null,
+    }));
   }, []);
 
   // Saved View actions
@@ -284,7 +378,17 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     addAnnotation,
     removeAnnotation,
     addAnnotationReply,
+    updateAnnotationStatus,
     clearAnnotations,
+    loadAnnotations,
+    selectAnnotation,
+    hoverAnnotation,
+    openAnnotationPanel,
+    closeAnnotationPanel,
+    openAnnotationModal,
+    closeAnnotationModal,
+    setActiveMarkupTool,
+    setDrawingMode,
     addSavedView,
     updateSavedView,
     removeSavedView,

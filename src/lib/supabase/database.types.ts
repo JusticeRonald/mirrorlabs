@@ -16,7 +16,10 @@ export type Json =
 export type UserRole = 'owner' | 'editor' | 'viewer';
 export type ScanStatus = 'uploading' | 'processing' | 'ready' | 'error';
 export type AnnotationType = 'pin' | 'comment' | 'markup';
-export type AnnotationStatus = 'open' | 'resolved';
+export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
+export type MarkupType = 'freehand' | 'circle' | 'rectangle' | 'arrow' | 'cloud' | 'text';
+export type MarkupStatus = 'visible' | 'hidden' | 'archived';
+export type CommentStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
 export type MeasurementType = 'distance' | 'area' | 'angle';
 export type MeasurementUnit = 'ft' | 'm' | 'in' | 'cm';
 export type IndustryType = 'construction' | 'real-estate' | 'cultural';
@@ -199,6 +202,7 @@ export interface Database {
           thumbnail_url: string | null;
           status: ScanStatus;
           error_message: string | null;
+          orientation_json: Json | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -215,6 +219,7 @@ export interface Database {
           thumbnail_url?: string | null;
           status?: ScanStatus;
           error_message?: string | null;
+          orientation_json?: Json | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -231,6 +236,7 @@ export interface Database {
           thumbnail_url?: string | null;
           status?: ScanStatus;
           error_message?: string | null;
+          orientation_json?: Json | null;
           created_by?: string;
           created_at?: string;
           updated_at?: string;
@@ -381,6 +387,9 @@ export interface Database {
           parent_id: string | null;
           content: string;
           mentions: string[];
+          status: CommentStatus;
+          root_comment_id: string | null;
+          thread_depth: number;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -392,6 +401,9 @@ export interface Database {
           parent_id?: string | null;
           content: string;
           mentions?: string[];
+          status?: CommentStatus;
+          root_comment_id?: string | null;
+          thread_depth?: number;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -403,6 +415,50 @@ export interface Database {
           parent_id?: string | null;
           content?: string;
           mentions?: string[];
+          status?: CommentStatus;
+          root_comment_id?: string | null;
+          thread_depth?: number;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      markups: {
+        Row: {
+          id: string;
+          scan_id: string;
+          type: MarkupType;
+          strokes: Json;
+          camera_snapshot: Json;
+          style: Json;
+          label: string | null;
+          status: MarkupStatus;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          scan_id: string;
+          type?: MarkupType;
+          strokes: Json;
+          camera_snapshot: Json;
+          style?: Json;
+          label?: string | null;
+          status?: MarkupStatus;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          scan_id?: string;
+          type?: MarkupType;
+          strokes?: Json;
+          camera_snapshot?: Json;
+          style?: Json;
+          label?: string | null;
+          status?: MarkupStatus;
           created_by?: string;
           created_at?: string;
           updated_at?: string;
@@ -458,6 +514,9 @@ export interface Database {
       activity_action: ActivityAction;
       account_type: AccountType;
       workspace_type: WorkspaceType;
+      markup_type: MarkupType;
+      markup_status: MarkupStatus;
+      comment_status: CommentStatus;
     };
   };
 }
@@ -485,6 +544,7 @@ export type AnnotationReply = Tables<'annotation_replies'>;
 export type Measurement = Tables<'measurements'>;
 export type CameraWaypoint = Tables<'camera_waypoints'>;
 export type Comment = Tables<'comments'>;
+export type Markup = Tables<'markups'>;
 export type ActivityLog = Tables<'activity_log'>;
 
 // Extended types with relations

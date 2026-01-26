@@ -5,14 +5,9 @@ const Footer = () => {
     <footer className="py-12 border-t border-border">
       <div className="container mx-auto px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          {/* Logo - tight spacing */}
-          <div className="flex items-center gap-1">
-            <img
-              src="/icon.svg"
-              alt="Mirror Labs"
-              className="w-8 h-8"
-            />
-            <span className="text-xl font-semibold text-foreground">Mirror Labs</span>
+          {/* Logo */}
+          <div className="flex items-center">
+            <img src="/logo.svg" alt="Mirror Labs" className="h-7" />
           </div>
 
           {/* Links */}

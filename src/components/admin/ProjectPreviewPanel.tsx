@@ -16,7 +16,6 @@ import {
   Users,
   Calendar,
   ArrowUpRight,
-  Play,
   Building2,
   Archive,
   Loader2,
@@ -111,14 +110,9 @@ export function ProjectPreviewPanel({
   // Use full project data if available, otherwise use base info
   const scans = fullProject?.scans || [];
   const members = fullProject?.members || [];
-  const hasReadyScan = scans.some((s) => s.status === 'ready');
-  const firstReadyScan = scans.find((s) => s.status === 'ready');
 
-  // Build viewer link and project details link based on isAdmin
+  // Build project details link based on isAdmin
   const projectDetailsLink = isAdmin ? `/admin/projects/${project.id}` : `/projects/${project.id}`;
-  const viewerLink = firstReadyScan
-    ? `/viewer/${project.id}/${firstReadyScan.id}`
-    : projectDetailsLink;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -212,10 +206,12 @@ export function ProjectPreviewPanel({
                 {scans.slice(0, 5).map((scan) => {
                   const statusConfig = scanStatusConfig[scan.status];
                   const StatusIcon = statusConfig.icon;
-                  return (
+                  const isReady = scan.status === 'ready';
+                  const scanContent = (
                     <div
-                      key={scan.id}
-                      className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50"
+                      className={`flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 ${
+                        isReady ? 'hover:bg-muted cursor-pointer transition-colors' : ''
+                      }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -226,8 +222,23 @@ export function ProjectPreviewPanel({
                         <span className="text-xs text-muted-foreground">
                           {statusConfig.label}
                         </span>
+                        {isReady && (
+                          <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground ml-1" />
+                        )}
                       </div>
                     </div>
+                  );
+
+                  return isReady ? (
+                    <Link
+                      key={scan.id}
+                      to={`/viewer/${project.id}/${scan.id}`}
+                      onClick={() => onOpenChange(false)}
+                    >
+                      {scanContent}
+                    </Link>
+                  ) : (
+                    <div key={scan.id}>{scanContent}</div>
                   );
                 })}
                 {scans.length > 5 && (
@@ -289,35 +300,16 @@ export function ProjectPreviewPanel({
 
         {/* Footer actions */}
         <div className="p-6 pt-4 border-t mt-auto">
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" asChild>
-              <Link
-                to={projectDetailsLink}
-                state={navigationState}
-                onClick={() => onOpenChange(false)}
-              >
-                View Full Details
-                <ArrowUpRight className="w-4 h-4 ml-2" />
-              </Link>
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={!hasReadyScan}
-              asChild={hasReadyScan}
+          <Button className="w-full" asChild>
+            <Link
+              to={projectDetailsLink}
+              state={navigationState}
+              onClick={() => onOpenChange(false)}
             >
-              {hasReadyScan ? (
-                <Link to={viewerLink} onClick={() => onOpenChange(false)}>
-                  <Play className="w-4 h-4 mr-2" />
-                  Open Viewer
-                </Link>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  No Ready Scans
-                </>
-              )}
-            </Button>
-          </div>
+              View Full Details
+              <ArrowUpRight className="w-4 h-4 ml-2" />
+            </Link>
+          </Button>
         </div>
       </SheetContent>
     </Sheet>

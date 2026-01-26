@@ -18,7 +18,7 @@ interface AuthContextType {
   canUpload: boolean;
   // Auth methods
   login: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signup: (email: string, password: string, name: string) => Promise<{ error: AuthError | null }>;
+  signup: (email: string, password: string, name: string) => Promise<{ error: AuthError | null; session: Session | null }>;
   logout: () => Promise<void>;
   loginAsDemo: () => void;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
@@ -92,6 +92,41 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return data;
   }, []);
 
+  // Create profile if missing (fallback when database trigger doesn't fire)
+  const createProfileIfMissing = useCallback(async (user: SupabaseUser): Promise<Profile | null> => {
+    if (!isSupabaseConfigured()) return null;
+
+    const name = user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+    const isStaffUser = user.email?.endsWith('@mirrorlabs3d.com') || false;
+
+    // Generate initials
+    const parts = name.trim().split(' ');
+    const initials = parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+      : name.substring(0, 2).toUpperCase();
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({
+        id: user.id,
+        email: user.email!,
+        name,
+        initials,
+        account_type: isStaffUser ? 'staff' : 'client',
+        is_staff: isStaffUser,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Auth] Failed to create profile:', error.message);
+      return null;
+    }
+
+    console.log('[Auth] Profile created for user:', user.email);
+    return data as Profile;
+  }, []);
+
   // Initialize auth state
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -123,7 +158,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
         setSession(session);
         if (session?.user) {
-          const userProfile = await fetchProfile(session.user.id);
+          let userProfile = await fetchProfile(session.user.id);
+
+          // Fallback: Create profile if missing (trigger didn't fire)
+          if (!userProfile) {
+            console.log('[Auth] Profile missing, creating...');
+            userProfile = await createProfileIfMissing(session.user);
+          }
+
           setProfile(userProfile);
         } else {
           // No valid session - ensure clean state
@@ -167,7 +209,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             setSession(session);
             setIsDemoMode(false);
             if (session?.user) {
-              const userProfile = await fetchProfile(session.user.id);
+              let userProfile = await fetchProfile(session.user.id);
+
+              // Fallback: Create profile if missing (trigger didn't fire)
+              if (!userProfile) {
+                console.log('[Auth] Profile missing, creating...');
+                userProfile = await createProfileIfMissing(session.user);
+              }
+
               setProfile(userProfile);
             }
             break;
@@ -181,7 +230,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             setSession(session);
             setIsDemoMode(false);
             if (session?.user) {
-              const userProfile = await fetchProfile(session.user.id);
+              let userProfile = await fetchProfile(session.user.id);
+
+              // Fallback: Create profile if missing (trigger didn't fire)
+              if (!userProfile) {
+                console.log('[Auth] Profile missing, creating...');
+                userProfile = await createProfileIfMissing(session.user);
+              }
+
               setProfile(userProfile);
             } else {
               setProfile(null);
@@ -191,7 +247,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     );
 
     return () => subscription.unsubscribe();
-  }, [fetchProfile]);
+  }, [fetchProfile, createProfileIfMissing]);
 
   const login = async (email: string, password: string): Promise<{ error: AuthError | null }> => {
     if (!isSupabaseConfigured()) {
@@ -202,12 +258,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return { error };
   };
 
-  const signup = async (email: string, password: string, name: string): Promise<{ error: AuthError | null }> => {
+  const signup = async (email: string, password: string, name: string): Promise<{ error: AuthError | null; session: Session | null }> => {
     if (!isSupabaseConfigured()) {
-      return { error: { name: 'ConfigError', message: 'Supabase is not configured' } as AuthError };
+      return { error: { name: 'ConfigError', message: 'Supabase is not configured' } as AuthError, session: null };
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -215,12 +271,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       },
     });
 
-    // Note: Profile is created automatically by database trigger (handle_new_user)
+    // Note: Profile is created by database trigger (handle_new_user) or frontend fallback
     // Admin-Centric Model:
-    // - Staff (@mirrorlabs3d.com): Gets a personal workspace
+    // - Staff (@mirrorlabs3d.com): Gets a personal workspace (via trigger only)
     // - Clients: Profile only - admin adds them to workspaces
 
-    return { error };
+    // Return session if present (email confirmation disabled = auto-logged-in)
+    // If session is null, email confirmation is required
+    return { error, session: data?.session || null };
   };
 
   const logout = async (): Promise<void> => {

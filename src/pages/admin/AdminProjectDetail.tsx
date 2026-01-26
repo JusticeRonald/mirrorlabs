@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import {
   FolderOpen,
@@ -9,10 +9,18 @@ import {
   Archive,
   Edit,
   FileStack,
-  Play,
+  Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +30,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { AdminLayout } from '@/components/admin';
+import { ScanUploader } from '@/components/upload/ScanUploader';
 import { getProjectById } from '@/lib/supabase/services/projects';
+import { useToast } from '@/hooks/use-toast';
 import type { ProjectWithMembers, Scan } from '@/lib/supabase/database.types';
 
 // Navigation context for breadcrumbs
@@ -57,17 +67,37 @@ const AdminProjectDetail = () => {
   const navState = location.state as ProjectNavigationState | null;
   const [project, setProject] = useState<ProjectWithMembers | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const { toast } = useToast();
+
+  const fetchProject = useCallback(async () => {
+    if (!id) return;
+    setIsLoading(true);
+    const proj = await getProjectById(id);
+    setProject(proj);
+    setIsLoading(false);
+  }, [id]);
 
   useEffect(() => {
-    const fetchProject = async () => {
-      if (!id) return;
-      setIsLoading(true);
-      const proj = await getProjectById(id);
-      setProject(proj);
-      setIsLoading(false);
-    };
     fetchProject();
-  }, [id]);
+  }, [fetchProject]);
+
+  const handleUploadComplete = useCallback((scanId: string, fileUrl: string) => {
+    toast({
+      title: 'Scan uploaded',
+      description: 'The scan has been imported successfully.',
+    });
+    setIsImportDialogOpen(false);
+    fetchProject(); // Refresh scan list
+  }, [toast, fetchProject]);
+
+  const handleUploadError = useCallback((error: string) => {
+    toast({
+      title: 'Upload failed',
+      description: error,
+      variant: 'destructive',
+    });
+  }, [toast]);
 
   // Build breadcrumbs based on navigation context
   const breadcrumbs = useMemo(() => {
@@ -121,9 +151,6 @@ const AdminProjectDetail = () => {
   const getViewerLink = (scan: Scan) => {
     return `/viewer/${project.id}/${scan.id}`;
   };
-
-  // Get first scan for quick open
-  const firstReadyScan = project.scans?.find(s => s.status === 'ready');
 
   return (
     <AdminLayout
@@ -190,14 +217,6 @@ const AdminProjectDetail = () => {
                 <Edit className="w-4 h-4 mr-2" />
                 Edit
               </Button>
-              {firstReadyScan && (
-                <Button asChild>
-                  <Link to={getViewerLink(firstReadyScan)}>
-                    <Play className="w-4 h-4 mr-2" />
-                    Open Viewer
-                  </Link>
-                </Button>
-              )}
             </div>
           </div>
         </CardContent>
@@ -205,15 +224,42 @@ const AdminProjectDetail = () => {
 
       {/* Scans Section */}
       <div className="mb-6">
-        <h3 className="text-lg font-semibold mb-4">Scans</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Scans</h3>
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="w-4 h-4 mr-2" />
+                Import Scan
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Import Scan</DialogTitle>
+                <DialogDescription>
+                  Upload a 3D scan file to add to this project.
+                </DialogDescription>
+              </DialogHeader>
+              <ScanUploader
+                projectId={project.id}
+                onUploadComplete={handleUploadComplete}
+                onError={handleUploadError}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
         {!project.scans || project.scans.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <FileStack className="w-12 h-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium mb-2">No scans yet</h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground mb-4">
                 This project doesn't have any scans uploaded.
               </p>
+              <Button onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" />
+                Import Scan
+              </Button>
             </CardContent>
           </Card>
         ) : (

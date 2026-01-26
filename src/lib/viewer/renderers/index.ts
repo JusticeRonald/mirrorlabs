@@ -3,6 +3,7 @@ export type {
   GaussianSplatRendererFactory,
   SplatMetadata,
   SplatLoadProgress,
+  SplatLoadOptions,
 } from './GaussianSplatRenderer';
 
 export { SparkSplatRenderer, createSparkRenderer } from './SparkSplatRenderer';

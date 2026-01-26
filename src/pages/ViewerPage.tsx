@@ -10,13 +10,22 @@ import ViewerHeader from '@/components/viewer/ViewerHeader';
 import ViewerSharePanel from '@/components/viewer/ViewerSharePanel';
 import ViewerLoadingOverlay from '@/components/viewer/ViewerLoadingOverlay';
 import AnnotationPanel from '@/components/viewer/AnnotationPanel';
-import CommentModal from '@/components/viewer/CommentModal';
+import AnnotationModal from '@/components/viewer/AnnotationModal';
 import { AnnotationIconOverlay } from '@/components/viewer/AnnotationMarker';
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
 import { getProjectById as getMockProjectById, getScanById as getMockScanById } from '@/data/mockProjects';
 import { getProjectById as getSupabaseProject } from '@/lib/supabase/services/projects';
 import { getScanById as getSupabaseScan, getScanTransform, saveScanTransform } from '@/lib/supabase/services/scans';
+import {
+  getScanAnnotations,
+  createAnnotation as createAnnotationService,
+  updateAnnotation as updateAnnotationService,
+  deleteAnnotation as deleteAnnotationService,
+  addAnnotationReply as addAnnotationReplyService,
+} from '@/lib/supabase/services/annotations';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
+import type { Annotation as DbAnnotation, AnnotationReply as DbAnnotationReply } from '@/lib/supabase/database.types';
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { UserRole } from '@/types/user';
 import type { SplatLoadProgress, SplatLoadError, SplatTransform, TransformMode } from '@/types/viewer';
@@ -60,6 +69,7 @@ interface ViewerScanInfo {
 // Inner component that uses the ViewerContext
 const ViewerContent = () => {
   const { projectId, scanId } = useParams<{ projectId: string; scanId: string }>();
+  const { user } = useAuth();
   const {
     state,
     permissions,
@@ -77,9 +87,13 @@ const ViewerContent = () => {
     hoverAnnotation,
     openAnnotationPanel,
     closeAnnotationPanel,
-    openCommentModal,
-    closeCommentModal,
+    openAnnotationModal,
+    closeAnnotationModal,
+    loadAnnotations,
   } = useViewer();
+
+  // Get current user ID (use 'demo-user' for demo mode)
+  const currentUserId = user?.id || 'demo-user';
 
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
@@ -105,6 +119,52 @@ const ViewerContent = () => {
   // Camera state for HTML annotation overlay
   const [camera, setCamera] = useState<THREE.PerspectiveCamera | null>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Annotation persistence state
+  const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
+
+  // Real-time annotation subscription
+  const { isConnected: isRealtimeConnected } = useAnnotationSubscription({
+    scanId: scanId || '',
+    enabled: !!scanId && isSupabaseConfigured(),
+    handlers: {
+      onAnnotationInsert: (annotation: DbAnnotation) => {
+        // Only add if not already in local state (avoid duplicates from own changes)
+        if (!state.annotations.find(a => a.id === annotation.id)) {
+          addAnnotation({
+            id: annotation.id,
+            type: annotation.type as 'pin' | 'comment' | 'markup',
+            position: new THREE.Vector3(annotation.position_x, annotation.position_y, annotation.position_z),
+            content: annotation.content,
+            status: annotation.status as 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived',
+            createdBy: annotation.created_by,
+          } as Parameters<typeof addAnnotation>[0]);
+        }
+      },
+      onAnnotationUpdate: (annotation: DbAnnotation) => {
+        updateAnnotationStatus(annotation.id, annotation.status as 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived');
+      },
+      onAnnotationDelete: (oldAnnotation: DbAnnotation) => {
+        // Only remove from local state (don't trigger another delete to Supabase)
+        removeAnnotation(oldAnnotation.id);
+      },
+      onReplyInsert: (reply: DbAnnotationReply) => {
+        // Add reply to local state if the annotation exists
+        const annotationExists = state.annotations.find(a => a.id === reply.annotation_id);
+        if (annotationExists) {
+          // Check if reply already exists (avoid duplicates)
+          const replyExists = annotationExists.replies?.find(r => r.id === reply.id);
+          if (!replyExists) {
+            addAnnotationReply(reply.annotation_id, reply.content, reply.created_by);
+          }
+        }
+      },
+      onReplyDelete: (oldReply: DbAnnotationReply) => {
+        // Reply deletion not currently supported in local state
+        // Would need to add removeAnnotationReply to ViewerContext
+      },
+    },
+  });
 
   // Load project and scan data from Supabase or mock
   useEffect(() => {
@@ -170,6 +230,34 @@ const ViewerContent = () => {
                 code: 'NO_FILE',
                 url: ''
               });
+            }
+
+            // Load existing annotations from Supabase
+            try {
+              const annotationsData = await getScanAnnotations(scanId);
+              if (annotationsData && annotationsData.length > 0) {
+                // Convert database format to viewer format
+                const viewerAnnotations = annotationsData.map(ann => ({
+                  id: ann.id,
+                  type: ann.type as 'pin' | 'comment' | 'markup',
+                  position: new THREE.Vector3(ann.position_x, ann.position_y, ann.position_z),
+                  content: ann.content,
+                  status: ann.status as 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived',
+                  createdAt: ann.created_at,
+                  createdBy: ann.created_by,
+                  createdByName: ann.creator?.name || ann.creator?.email || 'Unknown',
+                  replies: (ann.replies || []).map(reply => ({
+                    id: reply.id,
+                    content: reply.content,
+                    createdAt: reply.created_at,
+                    createdBy: reply.created_by,
+                    createdByName: 'User', // Reply profiles not joined yet
+                  })),
+                }));
+                loadAnnotations(viewerAnnotations);
+              }
+            } catch {
+              // Don't block the viewer for annotation errors
             }
 
             setIsDataLoading(false);
@@ -249,10 +337,10 @@ const ViewerContent = () => {
         createdBy: 'current-user',
       });
     } else if (state.activeTool === 'pin' || state.activeTool === 'comment') {
-      // Open comment modal for annotation creation
-      openCommentModal(point);
+      // Open annotation modal for annotation creation
+      openAnnotationModal(point);
     }
-  }, [state.activeTool, addMeasurement, openCommentModal]);
+  }, [state.activeTool, addMeasurement, openAnnotationModal]);
 
   // Handle scene ready
   const handleSceneReady = useCallback((manager: SceneManager) => {
@@ -315,8 +403,8 @@ const ViewerContent = () => {
         return;
       }
 
-      // Skip if comment modal is open (let modal handle its own keyboard events)
-      if (state.isCommentModalOpen) {
+      // Skip if annotation modal is open (let modal handle its own keyboard events)
+      if (state.isAnnotationModalOpen) {
         return;
       }
 
@@ -354,7 +442,130 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, handleResetView, state.activeTool, state.isCommentModalOpen, setActiveTool]);
+  }, [transformMode, toggleGrid, handleResetView, state.activeTool, state.isAnnotationModalOpen, setActiveTool]);
+
+  // Handle annotation submission with Supabase persistence
+  const handleAnnotationSubmit = useCallback(async (data: {
+    type: 'pin' | 'comment' | 'markup';
+    position: { x: number; y: number; z: number };
+    content: string;
+    status: 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
+    createdBy: string;
+    cameraSnapshot?: {
+      position: { x: number; y: number; z: number };
+      target: { x: number; y: number; z: number };
+      fov: number;
+    };
+  }) => {
+    if (!scanId) return;
+
+    setIsSavingAnnotation(true);
+
+    // Persist to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        const { data: savedAnnotation, error } = await createAnnotationService({
+          scan_id: scanId,
+          type: data.type,
+          position_x: data.position.x,
+          position_y: data.position.y,
+          position_z: data.position.z,
+          content: data.content,
+          status: data.status,
+          created_by: currentUserId,
+        });
+
+        if (error) {
+          // Still add to local state for UX
+        }
+
+        // Add to local state with database ID if available
+        addAnnotation({
+          ...(savedAnnotation ? { id: savedAnnotation.id } : {}),
+          type: data.type,
+          position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+          content: data.content,
+          status: data.status,
+          createdBy: currentUserId,
+          createdByName: user?.name || user?.email || 'You',
+          cameraSnapshot: data.cameraSnapshot,
+        } as Parameters<typeof addAnnotation>[0]);
+      } catch {
+        // Fallback to local-only
+        addAnnotation({
+          type: data.type,
+          position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+          content: data.content,
+          status: data.status,
+          createdBy: currentUserId,
+          createdByName: user?.name || user?.email || 'You',
+          cameraSnapshot: data.cameraSnapshot,
+        });
+      }
+    } else {
+      // Demo mode - local state only
+      addAnnotation({
+        type: data.type,
+        position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+        content: data.content,
+        status: data.status,
+        createdBy: currentUserId,
+        createdByName: user?.name || user?.email || 'You',
+        cameraSnapshot: data.cameraSnapshot,
+      });
+    }
+
+    setIsSavingAnnotation(false);
+  }, [scanId, currentUserId, addAnnotation]);
+
+  // Handle annotation status change with Supabase persistence
+  const handleAnnotationStatusChange = useCallback(async (annotationId: string, status: 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived') => {
+    // Update local state immediately for responsiveness
+    updateAnnotationStatus(annotationId, status);
+
+    // Persist to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await updateAnnotationService(annotationId, { status });
+      } catch {
+        // Error updating annotation status - already updated locally
+      }
+    }
+  }, [updateAnnotationStatus]);
+
+  // Handle annotation deletion with Supabase persistence
+  const handleAnnotationDelete = useCallback(async (annotationId: string) => {
+    // Remove from local state immediately
+    removeAnnotation(annotationId);
+
+    // Delete from Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await deleteAnnotationService(annotationId);
+      } catch {
+        // Error deleting annotation - already removed locally
+      }
+    }
+  }, [removeAnnotation]);
+
+  // Handle annotation reply with Supabase persistence
+  const handleAnnotationReply = useCallback(async (annotationId: string, content: string) => {
+    // Add to local state immediately
+    addAnnotationReply(annotationId, content, currentUserId);
+
+    // Persist to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await addAnnotationReplyService({
+          annotation_id: annotationId,
+          content,
+          created_by: currentUserId,
+        });
+      } catch {
+        // Error saving annotation reply - already added locally
+      }
+    }
+  }, [addAnnotationReply, currentUserId]);
 
   // Handle share
   const handleShare = useCallback(() => {
@@ -468,7 +679,7 @@ const ViewerContent = () => {
         annotations={state.annotations}
         permissions={permissions}
         onDeleteMeasurement={removeMeasurement}
-        onDeleteAnnotation={removeAnnotation}
+        onDeleteAnnotation={handleAnnotationDelete}
       />
 
       {/* Toolbar */}
@@ -515,13 +726,13 @@ const ViewerContent = () => {
                 : null
             }
             annotations={state.annotations}
-            currentUserId="current-user"
+            currentUserId={currentUserId}
             canEdit={permissions.canAnnotate}
             onClose={closeAnnotationPanel}
             onSelectAnnotation={(ann) => selectAnnotation(ann.id)}
-            onStatusChange={updateAnnotationStatus}
-            onDelete={removeAnnotation}
-            onAddReply={addAnnotationReply}
+            onStatusChange={handleAnnotationStatusChange}
+            onDelete={handleAnnotationDelete}
+            onAddReply={handleAnnotationReply}
             mode={state.selectedAnnotationId ? 'detail' : 'list'}
             onAddAnnotation={() => {
               setActiveTool('comment');
@@ -531,24 +742,15 @@ const ViewerContent = () => {
         </div>
       )}
 
-      {/* Comment Modal for creating new annotations */}
-      <CommentModal
-        isOpen={state.isCommentModalOpen}
-        onClose={closeCommentModal}
+      {/* Annotation Modal for creating new annotations */}
+      <AnnotationModal
+        isOpen={state.isAnnotationModalOpen}
+        onClose={closeAnnotationModal}
         position={state.pendingAnnotationPosition}
         scanId={scanId || ''}
-        userId="current-user"
+        userId={currentUserId}
         type={state.activeTool === 'pin' ? 'pin' : 'comment'}
-        onSubmit={(data) => {
-          addAnnotation({
-            type: data.type,
-            position: new THREE.Vector3(data.position.x, data.position.y, data.position.z),
-            content: data.content,
-            status: data.status,
-            createdBy: data.createdBy,
-            cameraSnapshot: data.cameraSnapshot,
-          });
-        }}
+        onSubmit={handleAnnotationSubmit}
       />
     </div>
   );

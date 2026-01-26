@@ -6,6 +6,8 @@ import type {
   UpdateTables,
   ScanStatus,
 } from '../database.types';
+import type { SplatOrientation, SplatTransform } from '@/types/viewer';
+import { isLegacyOrientation, isSplatTransform, orientationToTransform } from '@/types/viewer';
 
 /**
  * Get all scans for a project
@@ -176,4 +178,175 @@ export async function getScanSignedUrl(
   }
 
   return { url: data?.signedUrl || null, error: null };
+}
+
+/**
+ * Get the saved orientation for a scan
+ * @param scanId The scan ID
+ * @returns The saved orientation or null if not set
+ */
+export async function getScanOrientation(
+  scanId: string
+): Promise<SplatOrientation | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('scans')
+    .select('orientation_json')
+    .eq('id', scanId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching scan orientation:', error);
+    return null;
+  }
+
+  // Validate the orientation data
+  const orientation = data?.orientation_json as Record<string, unknown> | null;
+  if (
+    orientation &&
+    typeof orientation.x === 'number' &&
+    typeof orientation.y === 'number' &&
+    typeof orientation.z === 'number'
+  ) {
+    return {
+      x: orientation.x,
+      y: orientation.y,
+      z: orientation.z,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Save orientation for a scan
+ * @param scanId The scan ID
+ * @param orientation The orientation to save (Euler angles in radians)
+ */
+export async function saveScanOrientation(
+  scanId: string,
+  orientation: SplatOrientation
+): Promise<{ error: Error | null }> {
+  if (!isSupabaseConfigured()) {
+    return { error: new Error('Supabase not configured') };
+  }
+
+  const { error } = await supabase
+    .from('scans')
+    .update({
+      orientation_json: orientation,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', scanId);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+
+  return { error: null };
+}
+
+/**
+ * Clear the saved orientation for a scan (reverts to default)
+ * @param scanId The scan ID
+ */
+export async function clearScanOrientation(
+  scanId: string
+): Promise<{ error: Error | null }> {
+  if (!isSupabaseConfigured()) {
+    return { error: new Error('Supabase not configured') };
+  }
+
+  const { error } = await supabase
+    .from('scans')
+    .update({
+      orientation_json: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', scanId);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+
+  return { error: null };
+}
+
+/**
+ * Get the saved full transform for a scan (with backward compatibility for legacy orientation)
+ * @param scanId The scan ID
+ * @returns The saved transform or null if not set
+ */
+export async function getScanTransform(
+  scanId: string
+): Promise<SplatTransform | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('scans')
+    .select('orientation_json')
+    .eq('id', scanId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching scan transform:', error);
+    return null;
+  }
+
+  const stored = data?.orientation_json;
+
+  // Check if it's full transform data
+  if (isSplatTransform(stored)) {
+    return stored;
+  }
+
+  // Check if it's legacy orientation data and convert
+  if (isLegacyOrientation(stored)) {
+    return orientationToTransform(stored);
+  }
+
+  return null;
+}
+
+/**
+ * Save full transform for a scan
+ * @param scanId The scan ID
+ * @param transform The transform to save (position, rotation, scale)
+ */
+export async function saveScanTransform(
+  scanId: string,
+  transform: SplatTransform
+): Promise<{ error: Error | null }> {
+  if (!isSupabaseConfigured()) {
+    return { error: new Error('Supabase not configured') };
+  }
+
+  const { error } = await supabase
+    .from('scans')
+    .update({
+      orientation_json: transform,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', scanId);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+
+  return { error: null };
+}
+
+/**
+ * Clear the saved transform for a scan (reverts to default)
+ * @param scanId The scan ID
+ */
+export async function clearScanTransform(
+  scanId: string
+): Promise<{ error: Error | null }> {
+  return clearScanOrientation(scanId); // Same operation, just clear the field
 }

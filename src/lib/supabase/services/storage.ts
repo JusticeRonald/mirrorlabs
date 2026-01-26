@@ -16,13 +16,14 @@ export interface UploadResult {
 
 /**
  * Maximum file sizes by type (in bytes)
+ * Note: Supabase free tier has 50MB limit. Upgrade to Pro for 5GB limit.
  */
 export const MAX_FILE_SIZES: Record<SupportedFileType, number> = {
-  ply: 2 * 1024 * 1024 * 1024, // 2GB
-  spz: 500 * 1024 * 1024, // 500MB
-  splat: 500 * 1024 * 1024, // 500MB
-  ksplat: 500 * 1024 * 1024, // 500MB
-  pcsogs: 500 * 1024 * 1024, // 500MB (SOG compressed)
+  ply: 50 * 1024 * 1024, // 50MB (Supabase free tier limit)
+  spz: 50 * 1024 * 1024, // 50MB
+  splat: 50 * 1024 * 1024, // 50MB
+  ksplat: 50 * 1024 * 1024, // 50MB
+  pcsogs: 50 * 1024 * 1024, // 50MB
 };
 
 /**
@@ -144,6 +145,7 @@ export async function uploadScanFile(
 
     xhr.open('POST', storageUrl);
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.send(file);
   });

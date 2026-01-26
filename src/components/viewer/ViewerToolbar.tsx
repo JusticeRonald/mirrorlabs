@@ -1,24 +1,33 @@
+import { useState } from 'react';
 import {
-  Hand,
-  RotateCcw,
-  ZoomIn,
   Maximize,
   Ruler,
   Square,
   Triangle,
-  MapPin,
   MessageSquare,
   Box,
-  Scissors,
-  Layers,
   Download,
   Share2,
   Grid3X3,
-  Lock
+  Lock,
+  Save,
+  Undo2,
+  Move,
+  Maximize2,
+  MousePointer,
+  Rotate3D,
+  Check,
 } from 'lucide-react';
+import type { TransformMode } from '@/types/viewer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { RolePermissions } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,21 +44,25 @@ interface ViewerToolbarProps {
   onShare: () => void;
   onExport: () => void;
   variant?: 'full' | 'demo';
+  // Transform gizmo controls
+  transformMode?: TransformMode | null;
+  onTransformModeChange?: (mode: TransformMode | null) => void;
+  onResetTransform?: () => void;
+  onSaveTransform?: () => void;
+  canSaveTransform?: boolean;
+  isSavingTransform?: boolean;
+  // Annotation panel
+  onOpenAnnotationPanel?: () => void;
+  annotationCount?: number;
 }
 
 const iconMap: Record<string, React.ElementType> = {
-  Hand,
-  RotateCcw,
-  ZoomIn,
   Maximize,
   Ruler,
   Square,
   Triangle,
-  MapPin,
   MessageSquare,
   Box,
-  Scissors,
-  Layers,
   Download,
   Share2,
 };
@@ -107,6 +120,96 @@ const ToolButton = ({ id, name, icon: Icon, active, disabled, shortcut, requires
   );
 };
 
+interface MeasureToolDropdownProps {
+  activeTool: string | null;
+  onToolChange: (tool: string | null) => void;
+  canMeasure: boolean;
+  isLoggedIn: boolean;
+}
+
+const measureTools = [
+  { id: 'distance', name: 'Distance', icon: Ruler, shortcut: 'D', comingSoon: true },
+  { id: 'area', name: 'Area', icon: Square, shortcut: 'A', comingSoon: true },
+  { id: 'angle', name: 'Angle', icon: Triangle, shortcut: null, comingSoon: true },
+] as const;
+
+const MeasureToolDropdown = ({ activeTool, onToolChange, canMeasure, isLoggedIn }: MeasureToolDropdownProps) => {
+  const [open, setOpen] = useState(false);
+
+  // Find the currently active measurement tool (if any)
+  const activeMeasureTool = measureTools.find(t => t.id === activeTool);
+  const isMeasureToolActive = !!activeMeasureTool;
+
+  // Determine which icon to show on the button
+  const ActiveIcon = activeMeasureTool?.icon ?? Ruler;
+
+  const handleSelect = (toolId: string) => {
+    if (activeTool === toolId) {
+      onToolChange(null);
+    } else {
+      onToolChange(toolId);
+    }
+    setOpen(false);
+  };
+
+  const showLoginPrompt = !canMeasure && !isLoggedIn;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'h-9 w-9 transition-all relative',
+                isMeasureToolActive && 'bg-primary/20 text-primary border border-primary/30',
+                !canMeasure && 'opacity-50'
+              )}
+            >
+              <ActiveIcon className="h-4 w-4" />
+              <div
+                className="absolute top-0 right-0 w-0 h-0 border-t-[6px] border-t-current border-l-[6px] border-l-transparent"
+                aria-hidden="true"
+              />
+              {showLoginPrompt && (
+                <Lock className="h-2.5 w-2.5 absolute -top-0.5 -right-0.5 text-muted-foreground" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <span>Measure Tools</span>
+          {showLoginPrompt && (
+            <span className="text-xs text-muted-foreground block">Log in to use</span>
+          )}
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent side="top" align="start" className="min-w-[180px]">
+        {measureTools.map((tool) => (
+          <DropdownMenuItem
+            key={tool.id}
+            onClick={() => handleSelect(tool.id)}
+            disabled={!canMeasure || tool.comingSoon}
+            className="flex items-center gap-2 cursor-pointer"
+          >
+            <tool.icon className="h-4 w-4" />
+            <span className="flex-1">{tool.name}</span>
+            {activeTool === tool.id && <Check className="h-4 w-4 text-primary" />}
+            {tool.comingSoon && (
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Soon</span>
+            )}
+            {tool.shortcut && !tool.comingSoon && (
+              <kbd className="ml-auto text-xs bg-muted px-1.5 py-0.5 rounded">{tool.shortcut}</kbd>
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 const ViewerToolbar = ({
   activeTool,
   onToolChange,
@@ -119,6 +222,14 @@ const ViewerToolbar = ({
   onShare,
   onExport,
   variant = 'full',
+  transformMode,
+  onTransformModeChange,
+  onResetTransform,
+  onSaveTransform,
+  canSaveTransform = false,
+  isSavingTransform = false,
+  onOpenAnnotationPanel,
+  annotationCount = 0,
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -140,7 +251,7 @@ const ViewerToolbar = ({
             name="Reset View"
             icon={Maximize}
             active={false}
-            shortcut="R"
+            shortcut="V"
             onClick={onResetView}
           />
           <ToolButton
@@ -148,7 +259,7 @@ const ViewerToolbar = ({
             name="Toggle Grid"
             icon={Grid3X3}
             active={showGrid}
-            shortcut="G"
+            shortcut="T"
             onClick={onToggleGrid}
           />
         </div>
@@ -162,107 +273,181 @@ const ViewerToolbar = ({
         {/* Navigate Tools */}
         <div className="flex items-center gap-1">
           <ToolButton
-            id="pan"
-            name="Pan"
-            icon={Hand}
-            active={activeTool === 'pan'}
-            shortcut="P"
-            onClick={() => handleToolClick('pan')}
-          />
-          <ToolButton
-            id="orbit"
-            name="Orbit"
-            icon={RotateCcw}
-            active={activeTool === 'orbit'}
-            shortcut="O"
-            onClick={() => handleToolClick('orbit')}
-          />
-          <ToolButton
-            id="zoom"
-            name="Zoom"
-            icon={ZoomIn}
-            active={activeTool === 'zoom'}
-            shortcut="Z"
-            onClick={() => handleToolClick('zoom')}
-          />
-          <ToolButton
             id="reset"
             name="Reset View"
             icon={Maximize}
             active={false}
-            shortcut="R"
+            shortcut="V"
             onClick={onResetView}
           />
         </div>
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Measure Tools */}
+        {/* Transform Gizmo Controls */}
+        {onTransformModeChange && (
+          <>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 transition-all',
+                      transformMode === 'translate' && 'bg-primary/20 text-primary border border-primary/30'
+                    )}
+                    onClick={() => onTransformModeChange(transformMode === 'translate' ? null : 'translate')}
+                  >
+                    <Move className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span>Move</span>
+                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">G</kbd>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Drag axes to reposition</span>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 transition-all',
+                      transformMode === 'rotate' && 'bg-primary/20 text-primary border border-primary/30'
+                    )}
+                    onClick={() => onTransformModeChange(transformMode === 'rotate' ? null : 'rotate')}
+                  >
+                    <Rotate3D className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span>Rotate</span>
+                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">R</kbd>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Drag rings to rotate freely</span>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 transition-all',
+                      transformMode === 'scale' && 'bg-primary/20 text-primary border border-primary/30'
+                    )}
+                    onClick={() => onTransformModeChange(transformMode === 'scale' ? null : 'scale')}
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span>Scale</span>
+                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">S</kbd>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Drag handles to resize</span>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 transition-all',
+                      transformMode === null && 'bg-muted/50'
+                    )}
+                    onClick={() => onTransformModeChange(null)}
+                  >
+                    <MousePointer className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span>Select</span>
+                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">Esc</kbd>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Hide transform gizmo</span>
+                </TooltipContent>
+              </Tooltip>
+              {onResetTransform && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={onResetTransform}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Reset transform</TooltipContent>
+                </Tooltip>
+              )}
+              {onSaveTransform && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-9 w-9',
+                        !canSaveTransform && 'opacity-50 cursor-not-allowed'
+                      )}
+                      onClick={onSaveTransform}
+                      disabled={!canSaveTransform || isSavingTransform}
+                    >
+                      <Save className={cn('h-4 w-4', isSavingTransform && 'animate-pulse')} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {canSaveTransform ? 'Save transform' : 'Save not available in demo mode'}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <Separator orientation="vertical" className="h-6 mx-1" />
+          </>
+        )}
+
+        {/* Measure Tools - Consolidated Dropdown */}
         <div className="flex items-center gap-1">
-          <ToolButton
-            id="distance"
-            name="Measure Distance"
-            icon={Ruler}
-            active={activeTool === 'distance'}
-            disabled={!permissions.canMeasure}
-            requiresAuth
+          <MeasureToolDropdown
+            activeTool={activeTool}
+            onToolChange={onToolChange}
+            canMeasure={permissions.canMeasure}
             isLoggedIn={isLoggedIn}
-            comingSoon
-            shortcut="D"
-            onClick={() => handleToolClick('distance')}
-          />
-          <ToolButton
-            id="area"
-            name="Measure Area"
-            icon={Square}
-            active={activeTool === 'area'}
-            disabled={!permissions.canMeasure}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            comingSoon
-            shortcut="A"
-            onClick={() => handleToolClick('area')}
-          />
-          <ToolButton
-            id="angle"
-            name="Measure Angle"
-            icon={Triangle}
-            active={activeTool === 'angle'}
-            disabled={!permissions.canMeasure}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            comingSoon
-            onClick={() => handleToolClick('angle')}
           />
         </div>
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Annotate Tools */}
+        {/* Annotations - Single consolidated button */}
         <div className="flex items-center gap-1">
-          <ToolButton
-            id="pin"
-            name="Add Pin"
-            icon={MapPin}
-            active={activeTool === 'pin'}
-            disabled={!permissions.canAnnotate}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            comingSoon
-            onClick={() => handleToolClick('pin')}
-          />
-          <ToolButton
-            id="comment"
-            name="Add Comment"
-            icon={MessageSquare}
-            active={activeTool === 'comment'}
-            disabled={!permissions.canAnnotate}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            comingSoon
-            shortcut="C"
-            onClick={() => handleToolClick('comment')}
-          />
+          {onOpenAnnotationPanel && (
+            <div className="relative">
+              <ToolButton
+                id="comment"
+                name="Annotate"
+                icon={MessageSquare}
+                active={activeTool === 'comment'}
+                shortcut="C"
+                onClick={onOpenAnnotationPanel}
+              />
+              {annotationCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-medium rounded-full flex items-center justify-center pointer-events-none">
+                  {annotationCount > 9 ? '9+' : annotationCount}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <Separator orientation="vertical" className="h-6 mx-1" />
@@ -282,16 +467,8 @@ const ViewerToolbar = ({
             name="Toggle Grid"
             icon={Grid3X3}
             active={showGrid}
-            shortcut="G"
+            shortcut="T"
             onClick={onToggleGrid}
-          />
-          <ToolButton
-            id="layers"
-            name="Layers"
-            icon={Layers}
-            active={activeTool === 'layers'}
-            shortcut="L"
-            onClick={() => handleToolClick('layers')}
           />
         </div>
 

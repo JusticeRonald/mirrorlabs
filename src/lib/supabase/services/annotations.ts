@@ -33,7 +33,6 @@ export async function getScanAnnotations(scanId: string): Promise<AnnotationWith
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching annotations:', error);
     return [];
   }
 
@@ -148,7 +147,6 @@ export async function getScanMeasurements(scanId: string): Promise<Measurement[]
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching measurements:', error);
     return [];
   }
 
@@ -217,7 +215,6 @@ export async function getScanWaypoints(scanId: string): Promise<CameraWaypoint[]
     .order('sort_order', { ascending: true });
 
   if (error) {
-    console.error('Error fetching waypoints:', error);
     return [];
   }
 
@@ -346,7 +343,6 @@ export async function getScanComments(scanId: string): Promise<Comment[]> {
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Error fetching comments:', error);
     return [];
   }
 

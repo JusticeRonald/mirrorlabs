@@ -64,14 +64,9 @@ const Navigation = () => {
     }`}>
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16">
-          {/* Logo - tight spacing */}
-          <Link to="/" className="flex items-center gap-1">
-            <img
-              src="/icon.svg"
-              alt="Mirror Labs Icon"
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-semibold text-foreground">Mirror Labs</span>
+          {/* Logo */}
+          <Link to="/" className="flex items-center">
+            <img src="/logo.svg" alt="Mirror Labs" className="h-8" />
           </Link>
 
           {/* Desktop Navigation */}

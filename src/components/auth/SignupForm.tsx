@@ -10,12 +10,13 @@ interface SignupFormProps {
 }
 
 export function SignupForm({ onSuccess }: SignupFormProps) {
-  const { signup, login } = useAuth();
+  const { signup } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +29,7 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
 
     setIsLoading(true);
 
-    const { error: signupError } = await signup(email, password, name);
+    const { error: signupError, session } = await signup(email, password, name);
 
     if (signupError) {
       setError(signupError.message);
@@ -36,16 +37,36 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
       return;
     }
 
-    // Auto-login after successful signup
-    const { error: loginError } = await login(email, password);
-    if (loginError) {
-      setError('Account created but login failed. Please try logging in.');
-      setIsLoading(false);
+    // If signup returned a session, user is already logged in (email confirmation disabled)
+    // The onAuthStateChange listener will handle profile creation
+    if (session) {
+      onSuccess(email);
       return;
     }
 
-    onSuccess(email);
+    // No session = email confirmation required
+    // Show message prompting user to check their email
+    setNeedsConfirmation(true);
+    setIsLoading(false);
   };
+
+  // Show confirmation message if email verification is required
+  if (needsConfirmation) {
+    return (
+      <div className="space-y-4 text-center py-4">
+        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold">Check your email</h3>
+        <p className="text-sm text-muted-foreground">
+          We've sent a confirmation link to <span className="font-medium">{email}</span>.
+          Please check your inbox and click the link to activate your account.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">

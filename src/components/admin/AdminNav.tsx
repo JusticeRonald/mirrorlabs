@@ -55,11 +55,8 @@ export const AdminNav = () => {
       {/* Logo Header */}
       <div className="p-4 border-b border-border">
         <Link to="/admin" className="flex items-center gap-2">
-          <img src="/icon.svg" alt="Mirror Labs" className="h-8 w-8" />
-          <span className="text-lg font-semibold">
-            Mirror Labs
-            <span className="text-muted-foreground font-normal"> · Admin</span>
-          </span>
+          <img src="/logo.svg" alt="Mirror Labs" className="h-7" />
+          <span className="text-muted-foreground text-sm font-normal">· Admin</span>
         </Link>
       </div>
 

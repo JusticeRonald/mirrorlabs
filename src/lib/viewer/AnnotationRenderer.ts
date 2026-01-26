@@ -1,14 +1,8 @@
 import * as THREE from 'three';
+import type { AnnotationType, AnnotationStatus } from '@/types/viewer';
 
-/**
- * Status types for annotations matching the database schema
- */
-export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
-
-/**
- * Types of annotations
- */
-export type AnnotationType = 'pin' | 'comment' | 'markup';
+// Re-export for backward compatibility
+export type { AnnotationType, AnnotationStatus };
 
 /**
  * Data associated with an annotation marker
@@ -20,6 +14,8 @@ export interface AnnotationData {
   status: AnnotationStatus;
   content: string;
   createdBy: string;
+  /** Display name of the creator (resolved from profile) */
+  createdByName?: string;
   createdAt: string;
   replyCount?: number;
   /** Camera snapshot for fly-to feature */

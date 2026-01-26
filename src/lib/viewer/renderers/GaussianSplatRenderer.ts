@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { SplatOrientation, SplatTransform } from '@/types/viewer';
 
 /**
  * Metadata about a loaded splat scene
@@ -20,6 +21,16 @@ export interface SplatLoadProgress {
 }
 
 /**
+ * Options for loading a splat file
+ */
+export interface SplatLoadOptions {
+  /** Initial orientation to apply after loading (defaults to DEFAULT_SPLAT_ORIENTATION) */
+  initialOrientation?: SplatOrientation;
+  /** Initial full transform to apply after loading (takes precedence over initialOrientation) */
+  initialTransform?: SplatTransform;
+}
+
+/**
  * Abstract interface for Gaussian Splat renderers.
  * This abstraction allows swapping rendering implementations
  * (e.g., Spark, custom WebGPU renderer) without changing application code.
@@ -29,11 +40,13 @@ export interface GaussianSplatRenderer {
    * Load a splat scene from a URL
    * @param url URL to the splat file (PLY, SPZ, SOG, etc.)
    * @param onProgress Optional progress callback
+   * @param options Optional load options (e.g., initial orientation)
    * @returns Promise that resolves with metadata when loading completes
    */
   loadFromUrl(
     url: string,
-    onProgress?: (progress: SplatLoadProgress) => void
+    onProgress?: (progress: SplatLoadProgress) => void,
+    options?: SplatLoadOptions
   ): Promise<SplatMetadata>;
 
   /**
@@ -68,6 +81,32 @@ export interface GaussianSplatRenderer {
    * @param deltaTime Time since last frame
    */
   update(camera: THREE.Camera, deltaTime: number): void;
+
+  /**
+   * Set the orientation (rotation) of the splat mesh
+   * @param orientation Euler angles in radians
+   * @deprecated Use setTransform instead for full transform support
+   */
+  setOrientation(orientation: SplatOrientation): void;
+
+  /**
+   * Get the current orientation of the splat mesh
+   * @returns Current orientation or null if no mesh loaded
+   * @deprecated Use getTransform instead for full transform support
+   */
+  getOrientation(): SplatOrientation | null;
+
+  /**
+   * Set the full transform (position, rotation, scale) of the splat mesh
+   * @param transform The transform to apply
+   */
+  setTransform(transform: SplatTransform): void;
+
+  /**
+   * Get the current full transform of the splat mesh
+   * @returns Current transform or null if no mesh loaded
+   */
+  getTransform(): SplatTransform | null;
 }
 
 /**

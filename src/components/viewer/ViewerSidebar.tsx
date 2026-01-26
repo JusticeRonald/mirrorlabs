@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Ruler, MessageSquare, Layers, Settings, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Ruler, Layers, Settings, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -132,52 +132,6 @@ const ViewerSidebar = ({
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteMeasurement(m.id);
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </SidebarSection>
-
-          {/* Annotations Section */}
-          <SidebarSection
-            title="Annotations"
-            icon={MessageSquare}
-            count={annotations.length}
-            defaultOpen={true}
-          >
-            {annotations.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">
-                No annotations yet
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {annotations.map((a) => (
-                  <div
-                    key={a.id}
-                    className="group flex items-center justify-between p-2 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
-                    onClick={() => onSelectAnnotation?.(a.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {a.content}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {a.replies?.length || 0} replies
-                      </p>
-                    </div>
-                    {permissions.canAnnotate && onDeleteAnnotation && !readOnly && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteAnnotation(a.id);
                         }}
                       >
                         <Trash2 className="h-3 w-3 text-destructive" />
