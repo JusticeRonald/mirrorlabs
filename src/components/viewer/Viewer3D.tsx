@@ -6,6 +6,7 @@ import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
+import { CURSOR_TARGET } from '@/lib/viewer/cursors';
 import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
@@ -52,15 +53,7 @@ interface Viewer3DProps {
   selectedMeasurementPoint?: SelectedMeasurementPoint | null;
   /** Callback when a measurement point is moved via gizmo */
   onMeasurementPointMove?: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
-  /** Measurement point currently being dragged (for direct drag with surface snap) */
-  draggingMeasurementPoint?: { measurementId: string; pointIndex: number } | null;
-  /** Callback when measurement point drag ends */
-  onMeasurementPointDragEnd?: () => void;
-  /** Annotation currently being dragged (for direct drag with surface snap) */
-  draggingAnnotation?: string | null;
-  /** Callback when annotation drag ends */
-  onAnnotationDragEnd?: () => void;
-  /** Callback when annotation is moved via dragging */
+  /** Callback when annotation is moved (click-to-relocate or gizmo) */
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
   /** Callback to expose the CameraAnimator to parent for saved views fly-to */
   onCameraAnimatorReady?: (animator: CameraAnimator) => void;
@@ -101,10 +94,6 @@ const Viewer3D = ({
   measurements,
   selectedMeasurementPoint,
   onMeasurementPointMove,
-  draggingMeasurementPoint,
-  onMeasurementPointDragEnd,
-  draggingAnnotation,
-  onAnnotationDragEnd,
   onAnnotationMove,
   onCameraAnimatorReady,
   onCameraQuaternionUpdate,
@@ -150,10 +139,6 @@ const Viewer3D = ({
   const onPointSelectRef = useRef(onPointSelect);
   const onCameraReadyRef = useRef(onCameraReady);
   const onMeasurementPointMoveRef = useRef(onMeasurementPointMove);
-  const onMeasurementPointDragEndRef = useRef(onMeasurementPointDragEnd);
-  const draggingMeasurementPointRef = useRef(draggingMeasurementPoint);
-  const draggingAnnotationRef = useRef(draggingAnnotation);
-  const onAnnotationDragEndRef = useRef(onAnnotationDragEnd);
   const onAnnotationMoveRef = useRef(onAnnotationMove);
   const onCameraAnimatorReadyRef = useRef(onCameraAnimatorReady);
   const onCameraQuaternionUpdateRef = useRef(onCameraQuaternionUpdate);
@@ -177,10 +162,6 @@ const Viewer3D = ({
     onPointSelectRef.current = onPointSelect;
     onCameraReadyRef.current = onCameraReady;
     onMeasurementPointMoveRef.current = onMeasurementPointMove;
-    onMeasurementPointDragEndRef.current = onMeasurementPointDragEnd;
-    draggingMeasurementPointRef.current = draggingMeasurementPoint;
-    draggingAnnotationRef.current = draggingAnnotation;
-    onAnnotationDragEndRef.current = onAnnotationDragEnd;
     onAnnotationMoveRef.current = onAnnotationMove;
     onCameraAnimatorReadyRef.current = onCameraAnimatorReady;
     onCameraQuaternionUpdateRef.current = onCameraQuaternionUpdate;
@@ -198,6 +179,12 @@ const Viewer3D = ({
   useEffect(() => {
     selectedMeasurementPointRef.current = selectedMeasurementPoint;
   }, [selectedMeasurementPoint]);
+
+  // Track selected annotation for click-to-relocate
+  const selectedAnnotationIdRef = useRef(selectedAnnotationId);
+  useEffect(() => {
+    selectedAnnotationIdRef.current = selectedAnnotationId;
+  }, [selectedAnnotationId]);
 
   // Handle point selection via raycasting
   const handleClick = useCallback((event: MouseEvent) => {
@@ -230,23 +217,43 @@ const Viewer3D = ({
       return;
     }
 
+    // If an annotation is selected, click-to-relocate behavior
+    const editingAnnotation = selectedAnnotationIdRef.current;
+    if (editingAnnotation) {
+      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
+      if (pickResult) {
+        const newPos = pickResult.position.clone();
+        onAnnotationMoveRef.current?.(editingAnnotation, newPos);
+        sceneManagerRef.current.updateAnnotationPosition(editingAnnotation, newPos);
+        if (annotationHelperRef.current) {
+          annotationHelperRef.current.position.copy(newPos);
+        }
+        return;
+      }
+    }
+
     // If a measurement point is selected (editing mode), click-to-move behavior
     const editingPoint = selectedMeasurementPointRef.current;
     if (editingPoint) {
       const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
       if (pickResult) {
+        const newPos = pickResult.position.clone();
         // Move the selected point to the clicked position
         onMeasurementPointMoveRef.current?.(
           editingPoint.measurementId,
           editingPoint.pointIndex,
-          pickResult.position.clone()
+          newPos
         );
         // Update 3D line geometry in the scene
         sceneManagerRef.current.updateMeasurementPoint(
           editingPoint.measurementId,
           editingPoint.pointIndex,
-          pickResult.position.clone()
+          newPos
         );
+        // Update gizmo helper position so the 3D gizmo follows
+        if (measurementPointHelperRef.current) {
+          measurementPointHelperRef.current.position.copy(newPos);
+        }
         return; // Don't create new measurements while editing a point
       }
     }
@@ -280,44 +287,6 @@ const Viewer3D = ({
       -((event.clientY - rect.top) / rect.height) * 2 + 1
     );
 
-    // Handle annotation dragging with surface snap
-    const dragAnnotation = draggingAnnotationRef.current;
-    if (dragAnnotation) {
-      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
-      if (pickResult) {
-        // Update annotation position
-        onAnnotationMoveRef.current?.(dragAnnotation, pickResult.position.clone());
-        // Update 3D marker position in the scene
-        sceneManagerRef.current.updateAnnotationPosition(dragAnnotation, pickResult.position.clone());
-      }
-      // Show grabbing cursor during drag
-      containerRef.current.style.cursor = 'grabbing';
-      return; // Skip other hover logic during drag
-    }
-
-    // Handle measurement point dragging with surface snap
-    const dragPoint = draggingMeasurementPointRef.current;
-    if (dragPoint) {
-      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
-      if (pickResult) {
-        // Update point position
-        onMeasurementPointMoveRef.current?.(
-          dragPoint.measurementId,
-          dragPoint.pointIndex,
-          pickResult.position.clone()
-        );
-        // Update 3D line geometry in the scene
-        sceneManagerRef.current.updateMeasurementPoint(
-          dragPoint.measurementId,
-          dragPoint.pointIndex,
-          pickResult.position.clone()
-        );
-      }
-      // Show grabbing cursor during drag
-      containerRef.current.style.cursor = 'grabbing';
-      return; // Skip other hover logic during drag
-    }
-
     // Check if hovering over an annotation marker
     const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
     onAnnotationHoverRef.current?.(annotationId);
@@ -330,8 +299,11 @@ const Viewer3D = ({
       const editingPoint = selectedMeasurementPointRef.current;
 
       if (editingPoint) {
-        // Show move cursor when a measurement point is selected (click-to-move mode)
-        containerRef.current.style.cursor = 'move';
+        // Show target cursor when a measurement point is selected (click-to-move mode)
+        containerRef.current.style.cursor = CURSOR_TARGET;
+      } else if (selectedAnnotationIdRef.current) {
+        // Show target cursor when annotation is selected (click-to-relocate mode)
+        containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (isPlacementTool) {
         // Keep crosshair cursor when a placement tool is active (don't override on hover)
         containerRef.current.style.cursor = 'crosshair';
@@ -340,24 +312,6 @@ const Viewer3D = ({
         containerRef.current.style.cursor = 'pointer';
       } else {
         containerRef.current.style.cursor = 'default';
-      }
-    }
-  }, []);
-
-  // Handle pointer up to end measurement point or annotation dragging
-  const handlePointerUp = useCallback(() => {
-    if (draggingAnnotationRef.current) {
-      onAnnotationDragEndRef.current?.();
-      // Re-enable orbit controls
-      if (controlsRef.current) {
-        controlsRef.current.enabled = true;
-      }
-    }
-    if (draggingMeasurementPointRef.current) {
-      onMeasurementPointDragEndRef.current?.();
-      // Re-enable orbit controls
-      if (controlsRef.current) {
-        controlsRef.current.enabled = true;
       }
     }
   }, []);
@@ -717,19 +671,12 @@ const Viewer3D = ({
     // Mousemove handler for annotation hover detection and measurement point dragging
     renderer.domElement.addEventListener('mousemove', handleMouseMove);
 
-    // Pointerup handler for ending measurement point drag
-    renderer.domElement.addEventListener('pointerup', handlePointerUp);
-    // Also listen on window to catch mouseup outside canvas
-    window.addEventListener('pointerup', handlePointerUp);
-
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('mousemove', handleMouseMove);
-      renderer.domElement.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('keyup', handleKeyUp);
       renderer.domElement.removeEventListener('click', handleClick);
       cancelAnimationFrame(animationFrameId);
@@ -748,7 +695,7 @@ const Viewer3D = ({
         containerRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [scanId, modelUrl, onSceneReady, handlePointerDown, handleClick, handleMouseMove, handlePointerUp, enableZoom, splatUrl]);
+  }, [scanId, modelUrl, onSceneReady, handlePointerDown, handleClick, handleMouseMove, enableZoom, splatUrl]);
 
   // Load splat when URL changes (must run AFTER main scene setup)
   useEffect(() => {
@@ -1112,23 +1059,16 @@ const Viewer3D = ({
 
   // Note: 3D annotation marker sync removed - now using HTML overlay via AnnotationIconOverlay
 
-  // Disable orbit controls when drag starts (consolidated to avoid race conditions)
-  useEffect(() => {
-    if (controlsRef.current) {
-      controlsRef.current.enabled = !(draggingMeasurementPoint || draggingAnnotation);
-    }
-  }, [draggingMeasurementPoint, draggingAnnotation]);
-
   // Update cursor immediately when tool or editing state changes
   useEffect(() => {
     if (containerRef.current) {
       const isPlacementTool = activeTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(activeTool);
       if (selectedMeasurementPoint) {
-        // Show move cursor when a measurement point is selected (click-to-move mode)
-        containerRef.current.style.cursor = 'move';
+        // Show target cursor when a measurement point is selected (click-to-move mode)
+        containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (selectedAnnotationId) {
-        // Show grab cursor when annotation is selected (can be dragged)
-        containerRef.current.style.cursor = 'grab';
+        // Show target cursor when annotation is selected (can be dragged)
+        containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (isPlacementTool) {
         containerRef.current.style.cursor = 'crosshair';
       } else {

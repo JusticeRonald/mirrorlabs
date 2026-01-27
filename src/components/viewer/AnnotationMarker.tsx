@@ -292,8 +292,6 @@ interface AnnotationIconProps {
   onClick?: (annotation: AnnotationData) => void;
   /** Hover handler */
   onHover?: (annotation: AnnotationData | null) => void;
-  /** Drag start handler (for direct dragging with surface snap) */
-  onDragStart?: (annotation: AnnotationData) => void;
 }
 
 /**
@@ -315,7 +313,6 @@ export function AnnotationIcon({
   isSelected = false,
   onClick,
   onHover,
-  onDragStart,
 }: AnnotationIconProps) {
   // Calculate screen position and size
   const vector = position.clone().project(camera);
@@ -364,19 +361,11 @@ export function AnnotationIcon({
         style={{
           width: scaledSize,
           height: scaledSize,
-          cursor: isSelected ? 'grab' : 'pointer',
+          cursor: 'pointer',
         }}
         onClick={(e) => {
           e.stopPropagation();
           onClick?.(annotation);
-        }}
-        onPointerDown={(e) => {
-          // Start drag if selected and handler provided
-          if (isSelected && onDragStart) {
-            e.stopPropagation();
-            e.preventDefault();
-            onDragStart(annotation);
-          }
         }}
         onMouseEnter={() => onHover?.(annotation)}
         onMouseLeave={() => onHover?.(null)}
@@ -409,8 +398,6 @@ interface AnnotationIconOverlayProps {
   onAnnotationClick?: (annotation: AnnotationData) => void;
   /** Hover handler */
   onAnnotationHover?: (annotation: AnnotationData | null) => void;
-  /** Drag start handler (for direct dragging with surface snap) */
-  onAnnotationDragStart?: (annotation: AnnotationData) => void;
   /** Optional function to get live world position (for transform following) */
   getWorldPosition?: (id: string) => THREE.Vector3 | null;
 }
@@ -429,7 +416,6 @@ export function AnnotationIconOverlay({
   selectedId,
   onAnnotationClick,
   onAnnotationHover,
-  onAnnotationDragStart,
   getWorldPosition,
 }: AnnotationIconOverlayProps) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -494,7 +480,6 @@ export function AnnotationIconOverlay({
             isSelected={selectedId === data.id}
             onClick={onAnnotationClick}
             onHover={onAnnotationHover}
-            onDragStart={onAnnotationDragStart}
           />
         );
       })}

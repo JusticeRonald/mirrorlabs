@@ -118,6 +118,7 @@ const ViewerContent = () => {
     addAnnotation,
     removeAnnotation,
     updateAnnotationStatus,
+    updateAnnotationPosition,
     addAnnotationReply,
     selectAnnotation,
     hoverAnnotation,
@@ -178,15 +179,6 @@ const ViewerContent = () => {
   const [isSaveViewDialogOpen, setIsSaveViewDialogOpen] = useState(false);
   const [pendingCameraState, setPendingCameraState] = useState<CameraState | null>(null);
   const cameraAnimatorRef = useRef<CameraAnimator | null>(null);
-
-  // Measurement point drag state (for direct drag with surface snap)
-  const [draggingMeasurementPoint, setDraggingMeasurementPoint] = useState<{
-    measurementId: string;
-    pointIndex: number;
-  } | null>(null);
-
-  // Annotation drag state (for direct drag with surface snap)
-  const [draggingAnnotation, setDraggingAnnotation] = useState<string | null>(null);
 
   // Real-time annotation subscription
   const { isConnected: isRealtimeConnected } = useAnnotationSubscription({
@@ -544,7 +536,7 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.annotations, scanId]);
+  }, [state.annotations, scanId, sceneManager]);
 
   // Sync measurements with SceneManager
   useEffect(() => {
@@ -594,7 +586,7 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.measurements]);
+  }, [state.measurements, sceneManager]);
 
   // Transform mode change handler
   const handleTransformModeChange = useCallback((mode: TransformMode | null) => {
@@ -1059,32 +1051,10 @@ const ViewerContent = () => {
     setShowSharePanel(true);
   }, []);
 
-  // Handle measurement point drag start (for direct drag with surface snap)
-  const handleMeasurementPointDragStart = useCallback((point: { measurementId: string; pointIndex: number }) => {
-    setDraggingMeasurementPoint(point);
-  }, []);
-
-  // Handle measurement point drag end
-  const handleMeasurementPointDragEnd = useCallback(() => {
-    setDraggingMeasurementPoint(null);
-  }, []);
-
-  // Handle annotation drag start (for direct drag with surface snap)
-  const handleAnnotationDragStart = useCallback((annotationId: string) => {
-    setDraggingAnnotation(annotationId);
-  }, []);
-
-  // Handle annotation drag end
-  const handleAnnotationDragEnd = useCallback(() => {
-    setDraggingAnnotation(null);
-  }, []);
-
-  // Handle annotation move (update local state - persistence handled on drag end)
+  // Handle annotation move (click-to-relocate or gizmo drag)
   const handleAnnotationMove = useCallback((annotationId: string, position: THREE.Vector3) => {
-    // The scene manager updates the 3D marker position
-    // The HTML overlay will update automatically on next render
-    // We don't update the context state during drag to avoid re-renders
-  }, []);
+    updateAnnotationPosition(annotationId, position);
+  }, [updateAnnotationPosition]);
 
   // Show loading state while fetching data
   if (isDataLoading) {
@@ -1132,10 +1102,6 @@ const ViewerContent = () => {
           onMeasurementPointMove={(measurementId, pointIndex, newPosition) => {
             updateMeasurementPoint(measurementId, pointIndex, newPosition);
           }}
-          draggingMeasurementPoint={draggingMeasurementPoint}
-          onMeasurementPointDragEnd={handleMeasurementPointDragEnd}
-          draggingAnnotation={draggingAnnotation}
-          onAnnotationDragEnd={handleAnnotationDragEnd}
           onAnnotationMove={handleAnnotationMove}
           onSplatLoadStart={() => {
             setIsLoading(true);
@@ -1185,7 +1151,6 @@ const ViewerContent = () => {
             openCollaborationPanel('annotations');
           }}
           onAnnotationHover={(ann) => hoverAnnotation(ann?.id ?? null)}
-          onAnnotationDragStart={(ann) => handleAnnotationDragStart(ann.id)}
           getWorldPosition={(id) => sceneManagerRef.current?.getAnnotationWorldPosition(id) ?? null}
         />
 
@@ -1206,7 +1171,10 @@ const ViewerContent = () => {
           camera={camera}
           containerRef={viewerContainerRef}
           hoveredPointId={state.hoveredMeasurementId ? `${state.hoveredMeasurementId}-0` : null}
-          selectedPointId={state.selectedMeasurementId ? `${state.selectedMeasurementId}-0` : null}
+          selectedPointId={state.selectedMeasurementPoint
+            ? `${state.selectedMeasurementPoint.measurementId}-${state.selectedMeasurementPoint.pointIndex}`
+            : null
+          }
           editingPointId={state.selectedMeasurementPoint
             ? `${state.selectedMeasurementPoint.measurementId}-${state.selectedMeasurementPoint.pointIndex}`
             : null
@@ -1220,10 +1188,6 @@ const ViewerContent = () => {
             openCollaborationPanel('measurements');
           }}
           onPointHover={(point) => hoverMeasurement(point?.measurementId ?? null)}
-          onPointDragStart={(point) => handleMeasurementPointDragStart({
-            measurementId: point.measurementId,
-            pointIndex: point.pointIndex,
-          })}
           getWorldPosition={(measurementId, pointIndex) =>
             sceneManagerRef.current?.getMeasurementPointWorldPosition(measurementId, pointIndex) ?? null
           }

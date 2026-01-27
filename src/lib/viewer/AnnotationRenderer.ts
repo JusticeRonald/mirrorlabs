@@ -122,10 +122,14 @@ export class AnnotationRenderer {
     const newParent = parent ?? this.scene;
     if (newParent === this.parentObject) return;
 
-    // Re-parent existing markers
+    // Re-parent existing markers, preserving world positions
     this.markers.forEach((marker) => {
+      const worldPos = new THREE.Vector3();
+      marker.getWorldPosition(worldPos);
       this.parentObject.remove(marker);
       newParent.add(marker);
+      newParent.worldToLocal(worldPos);
+      marker.position.copy(worldPos);
     });
 
     this.parentObject = newParent;

@@ -108,10 +108,64 @@ export class MeasurementRenderer {
   setParentObject(parent: THREE.Object3D | null): void {
     const newParent = parent ?? this.scene;
     if (newParent === this.parentObject) return;
+    const oldParent = this.parentObject;
 
-    // Re-parent existing measurements
+    // Re-parent existing measurements, converting stored points between local spaces
     this.measurements.forEach((group) => {
-      this.parentObject.remove(group);
+      const data = group.userData.data as MeasurementData;
+      if (data?.points) {
+        // Convert stored points: old local → world → new local
+        data.points = data.points.map(p => {
+          const worldPos = p.clone();
+          oldParent.localToWorld(worldPos);
+          newParent.worldToLocal(worldPos);
+          return worldPos;
+        });
+
+        // Rebuild Line2 geometry, labels, and area fill to match converted points
+        if (data.type === 'distance' && data.points.length === 2) {
+          const p1 = data.points[0];
+          const p2 = data.points[1];
+          group.traverse((child) => {
+            if (child instanceof Line2) {
+              const geometry = child.geometry as LineGeometry;
+              geometry.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]);
+              child.computeLineDistances();
+            }
+          });
+          const label = this.labels.get(data.id);
+          if (label) {
+            const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
+            label.position.copy(midpoint);
+            label.position.y += this.config.labelOffset;
+          }
+        } else if (data.type === 'area' && data.points.length >= 3) {
+          const outlinePoints = [...data.points, data.points[0]];
+          const positions: number[] = [];
+          outlinePoints.forEach(p => positions.push(p.x, p.y, p.z));
+          group.traverse((child) => {
+            if (child instanceof Line2) {
+              const geometry = child.geometry as LineGeometry;
+              geometry.setPositions(positions);
+              child.computeLineDistances();
+            }
+            if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+              const newFillGeometry = this.createPolygonGeometry(data.points);
+              if (newFillGeometry) {
+                child.geometry.dispose();
+                child.geometry = newFillGeometry;
+              }
+            }
+          });
+          const label = this.labels.get(data.id);
+          if (label) {
+            const centroid = MeasurementCalculator.calculateCentroid(data.points);
+            label.position.copy(centroid);
+            label.position.y += this.config.labelOffset;
+          }
+        }
+      }
+      oldParent.remove(group);
       newParent.add(group);
     });
 

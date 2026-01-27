@@ -1,6 +1,5 @@
 import { useReducer, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MeasurementType } from '@/types/viewer';
 
@@ -42,8 +41,18 @@ interface MeasurementPointIconProps {
   onClick?: (point: MeasurementPointData) => void;
   /** Hover handler */
   onHover?: (point: MeasurementPointData | null) => void;
-  /** Drag start handler (for direct dragging with surface snap) */
-  onDragStart?: (point: MeasurementPointData) => void;
+}
+
+/**
+ * Pin SVG icon for measurement points
+ */
+function PinIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} style={style}>
+      <path fill="currentColor" d="M12 2a8 8 0 0 0-8 7.92c0 5.48 7.05 11.58 7.35 11.84a1 1 0 0 0 1.3 0C13 21.5 20 15.4 20 9.92A8 8 0 0 0 12 2m0 17.65c-1.67-1.59-6-6-6-9.73a6 6 0 0 1 12 0c0 3.7-4.33 8.14-6 9.73" />
+      <path fill="currentColor" d="M12 6a3.5 3.5 0 1 0 3.5 3.5A3.5 3.5 0 0 0 12 6m0 5a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 12 11" />
+    </svg>
+  );
 }
 
 /**
@@ -51,7 +60,7 @@ interface MeasurementPointIconProps {
  *
  * Small 2D HTML circles positioned in screen space with:
  * - Type-based color (blue for distance, purple for area)
- * - Target/crosshair icon inside
+ * - Pin icon inside
  * - Distance-based scaling
  * - Hover and selection states
  */
@@ -65,7 +74,6 @@ export function MeasurementPointIcon({
   isEditing = false,
   onClick,
   onHover,
-  onDragStart,
 }: MeasurementPointIconProps) {
   // Calculate screen position and size
   const vector = point.position.clone().project(camera);
@@ -115,25 +123,17 @@ export function MeasurementPointIcon({
         style={{
           width: scaledSize,
           height: scaledSize,
-          cursor: isEditing ? 'grab' : 'pointer',
+          cursor: 'pointer',
         }}
         onClick={(e) => {
           e.stopPropagation();
           onClick?.(point);
         }}
-        onPointerDown={(e) => {
-          // Start drag if in editing mode and handler provided
-          if (isEditing && onDragStart) {
-            e.stopPropagation();
-            e.preventDefault();
-            onDragStart(point);
-          }
-        }}
         onMouseEnter={() => onHover?.(point)}
         onMouseLeave={() => onHover?.(null)}
         title={`Point ${point.pointIndex + 1}`}
       >
-        <Target
+        <PinIcon
           className="text-white drop-shadow"
           style={{ width: iconSize, height: iconSize }}
         />
@@ -159,8 +159,6 @@ interface MeasurementIconOverlayProps {
   onPointClick?: (point: MeasurementPointData) => void;
   /** Hover handler */
   onPointHover?: (point: MeasurementPointData | null) => void;
-  /** Drag start handler (for direct dragging with surface snap) */
-  onPointDragStart?: (point: MeasurementPointData) => void;
   /** Optional function to get live world position (for transform following) */
   getWorldPosition?: (measurementId: string, pointIndex: number) => THREE.Vector3 | null;
 }
@@ -180,7 +178,6 @@ export function MeasurementIconOverlay({
   editingPointId,
   onPointClick,
   onPointHover,
-  onPointDragStart,
   getWorldPosition,
 }: MeasurementIconOverlayProps) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -250,7 +247,7 @@ export function MeasurementIconOverlay({
             isEditing={editingPointId === pointId}
             onClick={onPointClick}
             onHover={onPointHover}
-            onDragStart={onPointDragStart}
+
           />
         );
       })}

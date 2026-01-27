@@ -61,6 +61,7 @@ interface ViewerContextType {
   removeAnnotation: (id: string) => void;
   addAnnotationReply: (annotationId: string, content: string, createdBy: string) => void;
   updateAnnotationStatus: (annotationId: string, status: AnnotationStatus) => void;
+  updateAnnotationPosition: (annotationId: string, position: THREE.Vector3) => void;
   clearAnnotations: () => void;
   loadAnnotations: (annotations: Annotation[]) => void;
 
@@ -273,6 +274,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       selectedMeasurementPoint: null,
+      selectedMeasurementId: null,
     }));
   }, []);
 
@@ -366,6 +368,15 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       ...prev,
       annotations: prev.annotations.map(a =>
         a.id === annotationId ? { ...a, status } : a
+      ),
+    }));
+  }, []);
+
+  const updateAnnotationPosition = useCallback((annotationId: string, position: THREE.Vector3) => {
+    setState(prev => ({
+      ...prev,
+      annotations: prev.annotations.map(a =>
+        a.id === annotationId ? { ...a, position: position.clone() } : a
       ),
     }));
   }, []);
@@ -585,6 +596,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     removeAnnotation,
     addAnnotationReply,
     updateAnnotationStatus,
+    updateAnnotationPosition,
     clearAnnotations,
     loadAnnotations,
     selectAnnotation,
