@@ -149,7 +149,7 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 | **P0** | File Upload | ✅ Implemented |
 | **P1** | Functional Measurements | ✅ Implemented (Jan 2026) |
 | **P1** | Annotations/Comments | ✅ Implemented (Jan 2026) |
-| **P1** | Camera Waypoints (Saved Views) | ✅ Service Layer Ready |
+| **P1** | Camera Waypoints (Saved Views) | ✅ Implemented (Jan 2026) |
 | **P2** | SOG Compression | Future |
 | **P2** | Real-time Collaboration | ✅ Implemented (Jan 2026) |
 
@@ -167,7 +167,7 @@ activity_log (id, project_id, action, entity_type, entity_id, metadata)
 - ✅ Functional measurement tool (distance, area)
 - ✅ Annotation system + persistence to Supabase
 - ✅ Real-time annotation sync across users
-- Camera waypoints with transitions
+- ✅ Camera waypoints with smooth transitions (Saved Views)
 - Basic sharing (public links)
 
 **Phase 3: Scale & Polish**
@@ -349,21 +349,85 @@ Three account types with different permission levels:
 - ✅ Measurement tools (distance, area) with MeasurementRenderer (January 26, 2026)
 - ✅ CollaborationPanel with tabbed interface (January 26, 2026)
 - ✅ Keyboard shortcuts (G/R/S for transform, C/D for tools, Delete for removal)
+- ✅ Saved Views (camera waypoints) with fly-to animations (January 27, 2026)
+- ✅ AxisNavigator gizmo with view snapping (January 27, 2026)
+- ✅ 4-engineer code review with targeted fixes (January 27, 2026)
 
 ### Next Priority (P1 Features)
 - [x] Functional measurement tool (distance, area)
 - [x] Annotation system with persistence and real-time sync
-- [ ] Camera waypoints with smooth transitions
+- [x] Camera waypoints with smooth transitions (Saved Views)
 - [ ] Basic sharing (public links)
 - [ ] Measurement persistence to Supabase (currently local-only)
 
 ### Branch Status
-Development on `master` branch. The `gaussian-splat-viewer` branch has been merged after code review cleanup.
+Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Both branches are in sync as of January 27, 2026.
 
 ### To Resume Development
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 27, 2026)
+
+Comprehensive 4-engineer code review (Senior, Security, Performance, Architect) of the full codebase:
+
+### Review Scores
+| Review Type | Score | Critical | High | Medium | Low |
+|-------------|-------|----------|------|--------|-----|
+| **Senior Engineer** | 9.0/10 | 0 | 1 | 3 | 2 |
+| **Security Engineer** | 8.8/10 | 1 | 0 | 2 | 1 |
+| **Performance Engineer** | 8.5/10 | 0 | 1 | 2 | 1 |
+| **Architect** | 8.7/10 | 0 | 1 | 3 | 2 |
+
+### Issues Fixed (3)
+| Category | File | Fix |
+|----------|------|-----|
+| **P1 Error Handling** | `CameraAnimator.ts` | Wrap `animate()` in try-catch to prevent frozen camera on math errors |
+| **P0 Security** | `storage.ts` | Remove anon key fallback — require authenticated session for uploads |
+| **P1 Validation** | `ViewerPage.tsx` | Add `isValidPosition` check on measurement points before Supabase persistence |
+
+### Verified — No Fix Needed
+- **MeasurementRenderer.ts** — `dispose()` already exists with `removeEventListener('resize', ...)`
+- **annotation_replies RLS** — Policies exist in `schema.sql` (lines 500-516)
+- **Viewer3D.tsx ref pattern** — Intentional design to prevent stale closures
+
+### Known Technical Debt (Documented, Not Fixed)
+| # | Category | Issue | Risk |
+|---|----------|-------|------|
+| 1 | Architecture | ViewerPage.tsx 1,371 lines | Med |
+| 2 | Performance | N+1 query in getWorkspaces() | Med |
+| 3 | Performance | annotation_replies subscription unfiltered | Low |
+| 4 | Architecture | No centralized keyboard shortcut system | Low |
+| 5 | Testing | No test framework or tests | Med |
+| 6 | Code Quality | Viewer3D ref callback pattern | Low |
+| 7 | Code Quality | Console logging in AuthContext (~10 stmts) | Low |
+| 8 | Code Quality | Duplicate UUID validation across services | Low |
+| 9 | Code Quality | Dead deprecated methods in SceneManager | Low |
+| 10 | TypeScript | Strict mode disabled project-wide | Low |
+
+### New Features on This Branch
+- Saved Views (camera waypoints) with save dialog and fly-to animations
+- AxisNavigator gizmo with view snapping (front/back/top/bottom/left/right)
+- ViewsTab in CollaborationPanel for managing saved views
+- CameraAnimator with spherical interpolation for smooth arc transitions
+
+### Files Modified
+- `src/lib/viewer/CameraAnimator.ts` — Try-catch in animate(), spherical lerp
+- `src/lib/supabase/services/storage.ts` — Session-only auth for uploads
+- `src/pages/ViewerPage.tsx` — Measurement validation, saved views integration
+- `src/components/viewer/AxisNavigator.tsx` — View snapping improvements
+- `src/components/viewer/CollaborationPanel.tsx` — Saved Views tab
+
+### New Files
+- `src/components/viewer/AxisNavigator.tsx` — 3D axis navigation gizmo
+- `src/components/viewer/SaveViewDialog.tsx` — Dialog for naming saved views
+- `src/components/viewer/ViewsTab.tsx` — Saved views list in CollaborationPanel
+
+### Branch Status
+- `gaussian-splat-viewer` merged to `master` (January 27, 2026)
+
+---
 
 ## Code Review Summary (January 26, 2026 - Pre-Merge)
 
