@@ -1,4 +1,4 @@
-import { MessageSquare, Ruler, Bookmark, X, Pentagon } from 'lucide-react';
+import { MessageSquare, Ruler, Bookmark, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -12,6 +12,14 @@ import { ViewsTab } from './ViewsTab';
 import type { Annotation, Measurement, SavedView } from '@/types/viewer';
 import type { RolePermissions } from '@/types/user';
 import type { AnnotationData, AnnotationStatus } from '@/lib/viewer/AnnotationRenderer';
+
+function MeasureIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 512 512" className={className} fill="currentColor">
+      <path fillRule="evenodd" d="M277.333 33.83v234.65l143.085 143.102L456.837 448H64V247.163L240.915 70.248zm-42.666 103.002l-128 128v140.501h247.146L240.915 292.418l-6.248-6.248z" />
+    </svg>
+  );
+}
 
 export type CollaborationTab = 'annotations' | 'measurements' | 'views';
 export type MeasurementToolType = 'distance' | 'area';
@@ -264,7 +272,7 @@ export function CollaborationPanel({
                 onClick={handleAreaClick}
                 disabled
               >
-                <Pentagon className="h-5 w-5" />
+                <MeasureIcon className="h-5 w-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="left" className="bg-neutral-800 border-neutral-700 text-neutral-100">

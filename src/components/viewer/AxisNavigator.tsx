@@ -65,7 +65,7 @@ export function AxisNavigator({
       background: {
         enabled: true,
         color: 0x1a1a1a,
-        opacity: 0.6,
+        opacity: 0,
         hover: {
           color: 0x2a2a2a,
           opacity: 0.8,
@@ -80,7 +80,7 @@ export function AxisNavigator({
         line: true,
         hover: {
           color: 0xff6b6b,
-          scale: 1.2,
+
         },
       },
       y: {
@@ -90,7 +90,7 @@ export function AxisNavigator({
         line: true,
         hover: {
           color: 0x8fef4a,
-          scale: 1.2,
+
         },
       },
       z: {
@@ -100,7 +100,7 @@ export function AxisNavigator({
         line: true,
         hover: {
           color: 0x4aa8ff,
-          scale: 1.2,
+
         },
       },
 
@@ -111,7 +111,7 @@ export function AxisNavigator({
         line: false,
         hover: {
           color: 0xb03030,
-          scale: 1.2,
+
         },
       },
       ny: {
@@ -120,7 +120,7 @@ export function AxisNavigator({
         line: false,
         hover: {
           color: 0x5a9a20,
-          scale: 1.2,
+
         },
       },
       nz: {
@@ -129,7 +129,7 @@ export function AxisNavigator({
         line: false,
         hover: {
           color: 0x1470b8,
-          scale: 1.2,
+
         },
       },
     });
@@ -212,7 +212,7 @@ export function AxisNavigator({
   return (
     <div
       ref={containerRef}
-      className="rounded-lg overflow-hidden"
+      className=""
       style={{
         width: size,
         height: size,

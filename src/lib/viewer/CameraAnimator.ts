@@ -254,54 +254,148 @@ export class CameraAnimator {
   }
 
   /**
+   * Spherical interpolation for camera offset vectors.
+   *
+   * Instead of lerping positions linearly (which flies through the model on
+   * opposite-axis transitions), this interpolates the direction on a great-circle
+   * arc while linearly interpolating the radius.
+   */
+  private sphericalLerpOffset(
+    startOffset: THREE.Vector3,
+    endOffset: THREE.Vector3,
+    t: number
+  ): THREE.Vector3 {
+    const startLen = startOffset.length();
+    const endLen = endOffset.length();
+
+    // Degenerate: zero-length offset — fall back to linear
+    if (startLen < 1e-8 || endLen < 1e-8) {
+      return new THREE.Vector3().lerpVectors(startOffset, endOffset, t);
+    }
+
+    const startDir = startOffset.clone().normalize();
+    const endDir = endOffset.clone().normalize();
+    const dot = THREE.MathUtils.clamp(startDir.dot(endDir), -1, 1);
+
+    // Nearly identical directions — linear lerp is fine
+    if (dot > 0.9999) {
+      return new THREE.Vector3().lerpVectors(startOffset, endOffset, t);
+    }
+
+    // Interpolate radius linearly
+    const radius = startLen + (endLen - startLen) * t;
+
+    let direction: THREE.Vector3;
+
+    if (dot < -0.9999) {
+      // Exactly opposite (e.g., front → back): two-phase slerp via perpendicular midpoint
+      // Pick a perpendicular axis — prefer Y-up cross product
+      let perp = new THREE.Vector3().crossVectors(startDir, new THREE.Vector3(0, 1, 0));
+      if (perp.lengthSq() < 1e-8) {
+        // startDir is parallel to Y — use X instead
+        perp = new THREE.Vector3().crossVectors(startDir, new THREE.Vector3(1, 0, 0));
+      }
+      perp.normalize();
+
+      // Midpoint direction is perpendicular to both start and end
+      const midDir = perp;
+
+      // Build quaternions for two-phase slerp
+      const qStart = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        startDir
+      );
+      const qMid = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        midDir
+      );
+      const qEnd = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        endDir
+      );
+
+      // Two-phase: 0→0.5 = start→mid, 0.5→1 = mid→end
+      let q: THREE.Quaternion;
+      if (t < 0.5) {
+        q = qStart.clone().slerp(qMid, t * 2);
+      } else {
+        q = qMid.clone().slerp(qEnd, (t - 0.5) * 2);
+      }
+
+      direction = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    } else {
+      // Standard case: single quaternion slerp
+      const qStart = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        startDir
+      );
+      const qEnd = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        endDir
+      );
+      const q = qStart.clone().slerp(qEnd, t);
+      direction = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    }
+
+    return direction.multiplyScalar(radius);
+  }
+
+  /**
    * Animation loop
    */
   private animate = (): void => {
     if (!this.isAnimating || !this.startState || !this.endState) return;
 
-    const elapsed = performance.now() - this.startTime;
-    const rawProgress = Math.min(elapsed / this.duration, 1);
-    const progress = this.easing(rawProgress);
+    try {
+      const elapsed = performance.now() - this.startTime;
+      const rawProgress = Math.min(elapsed / this.duration, 1);
+      const progress = this.easing(rawProgress);
 
-    // Interpolate position
-    this.camera.position.lerpVectors(
-      this.startState.position,
-      this.endState.position,
-      progress
-    );
+      // Interpolate target linearly
+      this.controls.target.lerpVectors(
+        this.startState.target,
+        this.endState.target,
+        progress
+      );
+      const interpolatedTarget = this.controls.target.clone();
 
-    // Interpolate target
-    this.controls.target.lerpVectors(
-      this.startState.target,
-      this.endState.target,
-      progress
-    );
+      // Compute offsets relative to their respective targets
+      const startOffset = this.startState.position.clone().sub(this.startState.target);
+      const endOffset = this.endState.position.clone().sub(this.endState.target);
 
-    // Interpolate FOV if different
-    if (this.startState.fov !== undefined && this.endState.fov !== undefined) {
-      this.camera.fov =
-        this.startState.fov + (this.endState.fov - this.startState.fov) * progress;
-      this.camera.updateProjectionMatrix();
+      // Spherical lerp the offset, then apply to interpolated target
+      const newOffset = this.sphericalLerpOffset(startOffset, endOffset, progress);
+      this.camera.position.copy(interpolatedTarget).add(newOffset);
+
+      // Interpolate FOV if different
+      if (this.startState.fov !== undefined && this.endState.fov !== undefined) {
+        this.camera.fov =
+          this.startState.fov + (this.endState.fov - this.startState.fov) * progress;
+        this.camera.updateProjectionMatrix();
+      }
+
+      // Update controls
+      this.controls.update();
+
+      // Notify progress
+      this.onUpdateCallback?.(progress);
+
+      // Check if complete
+      if (rawProgress >= 1) {
+        this.isAnimating = false;
+        this.animationId = null;
+        this.onCompleteCallback?.();
+        this.onCompleteCallback = undefined;
+        this.onUpdateCallback = undefined;
+        return;
+      }
+
+      // Continue animation
+      this.animationId = requestAnimationFrame(this.animate);
+    } catch {
+      // Animation error — stop cleanly to avoid frozen camera
+      this.stop();
     }
-
-    // Update controls
-    this.controls.update();
-
-    // Notify progress
-    this.onUpdateCallback?.(progress);
-
-    // Check if complete
-    if (rawProgress >= 1) {
-      this.isAnimating = false;
-      this.animationId = null;
-      this.onCompleteCallback?.();
-      this.onCompleteCallback = undefined;
-      this.onUpdateCallback = undefined;
-      return;
-    }
-
-    // Continue animation
-    this.animationId = requestAnimationFrame(this.animate);
   };
 
   /**

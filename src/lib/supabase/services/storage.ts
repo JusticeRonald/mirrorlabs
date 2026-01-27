@@ -96,9 +96,12 @@ export async function uploadScanFile(
 
   const filePath = generateFilePath(projectId, file.name);
 
-  // Get current session token for authenticated uploads
+  // Get current session token for authenticated uploads (never fall back to anon key)
   const { data: { session } } = await supabase.auth.getSession();
-  const accessToken = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!session?.access_token) {
+    return { url: null, path: null, error: new Error('Authentication required: no active session') };
+  }
+  const accessToken = session.access_token;
 
   // Upload using XMLHttpRequest for progress tracking
   return new Promise((resolve) => {

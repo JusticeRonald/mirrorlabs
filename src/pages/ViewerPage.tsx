@@ -458,18 +458,26 @@ const ViewerContent = () => {
           const measurement = finalizeMeasurement(currentUserId);
           // Persist to Supabase if configured
           if (measurement && scanId && isSupabaseConfigured()) {
-            try {
-              await createMeasurementService({
-                scan_id: scanId,
-                type: measurement.type,
-                points_json: measurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                value: measurement.value,
-                unit: measurement.unit,
-                label: measurement.label || null,
-                created_by: currentUserId,
-              });
-            } catch {
-              // Measurement saved locally, persistence failed silently
+            // Validate all measurement points before persisting
+            const allPointsValid = measurement.points.every(p =>
+              isValidPosition({ x: p.x, y: p.y, z: p.z })
+            );
+            if (!allPointsValid) {
+              // Invalid coordinates — saved locally only
+            } else {
+              try {
+                await createMeasurementService({
+                  scan_id: scanId,
+                  type: measurement.type,
+                  points_json: measurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                  value: measurement.value,
+                  unit: measurement.unit,
+                  label: measurement.label || null,
+                  created_by: currentUserId,
+                });
+              } catch {
+                // Measurement saved locally, persistence failed silently
+              }
             }
           }
         }, 0);
