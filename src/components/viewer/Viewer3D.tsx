@@ -5,6 +5,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
+import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
@@ -61,6 +62,8 @@ interface Viewer3DProps {
   onAnnotationDragEnd?: () => void;
   /** Callback when annotation is moved via dragging */
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
+  /** Callback to expose the CameraAnimator to parent for saved views fly-to */
+  onCameraAnimatorReady?: (animator: CameraAnimator) => void;
 }
 
 const Viewer3D = ({
@@ -97,6 +100,7 @@ const Viewer3D = ({
   draggingAnnotation,
   onAnnotationDragEnd,
   onAnnotationMove,
+  onCameraAnimatorReady,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -110,6 +114,7 @@ const Viewer3D = ({
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const isSplatLoadingRef = useRef<boolean>(false);
   const rotationFeedbackRef = useRef<RotationGizmoFeedback | null>(null);
+  const cameraAnimatorRef = useRef<CameraAnimator | null>(null);
   // Helper object for measurement point gizmo attachment
   const measurementPointHelperRef = useRef<THREE.Object3D | null>(null);
   // Helper object for annotation gizmo attachment
@@ -139,6 +144,7 @@ const Viewer3D = ({
   const draggingAnnotationRef = useRef(draggingAnnotation);
   const onAnnotationDragEndRef = useRef(onAnnotationDragEnd);
   const onAnnotationMoveRef = useRef(onAnnotationMove);
+  const onCameraAnimatorReadyRef = useRef(onCameraAnimatorReady);
 
   // Keep callback refs updated
   // Intentionally no deps - refs should always have latest callback values to avoid stale closures
@@ -162,6 +168,7 @@ const Viewer3D = ({
     draggingAnnotationRef.current = draggingAnnotation;
     onAnnotationDragEndRef.current = onAnnotationDragEnd;
     onAnnotationMoveRef.current = onAnnotationMove;
+    onCameraAnimatorReadyRef.current = onCameraAnimatorReady;
   });
 
   // Track pointer position on mousedown for drag detection
@@ -479,6 +486,11 @@ const Viewer3D = ({
     scene.add(transformControls.getHelper());
     transformControlsRef.current = transformControls;
 
+    // Camera Animator (for fly-to functionality)
+    const cameraAnimator = new CameraAnimator(camera, controls);
+    cameraAnimatorRef.current = cameraAnimator;
+    onCameraAnimatorReadyRef.current?.(cameraAnimator);
+
     // Disable OrbitControls while dragging the gizmo
     transformControls.addEventListener('dragging-changed', (event: { value: boolean }) => {
       controls.enabled = !event.value;
@@ -668,12 +680,14 @@ const Viewer3D = ({
       controls.dispose();
       transformControls.dispose();
       rotationFeedback.dispose();
+      cameraAnimator.dispose();
       renderer.dispose();
       sceneManager.dispose();
       // Reset loading flag to prevent stuck state if component unmounts during load
       isSplatLoadingRef.current = false;
       rotationFeedbackRef.current = null;
       transformControlsRef.current = null;
+      cameraAnimatorRef.current = null;
       if (containerRef.current && renderer.domElement) {
         containerRef.current.removeChild(renderer.domElement);
       }

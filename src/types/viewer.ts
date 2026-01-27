@@ -116,7 +116,7 @@ export type AnnotationType = 'pin' | 'comment' | 'markup';
 export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
 export type MarkupToolType = 'freehand' | 'circle' | 'rectangle' | 'arrow' | 'cloud' | 'text' | null;
 export type ViewMode = 'solid' | 'wireframe' | 'points';
-export type CollaborationTab = 'annotations' | 'measurements';
+export type CollaborationTab = 'annotations' | 'measurements' | 'views';
 
 /**
  * Supported splat file formats

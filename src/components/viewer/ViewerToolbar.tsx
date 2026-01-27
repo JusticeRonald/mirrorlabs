@@ -5,17 +5,14 @@ import {
   Square,
   MessageSquare,
   Box,
-  Download,
   Share2,
   Grid3X3,
   Lock,
-  Save,
-  Undo2,
   Move,
   Maximize2,
-  MousePointer,
   Rotate3D,
   Check,
+  Bookmark,
 } from 'lucide-react';
 import type { TransformMode } from '@/types/viewer';
 import { Button } from '@/components/ui/button';
@@ -41,21 +38,19 @@ interface ViewerToolbarProps {
   onViewModeChange: (mode: 'solid' | 'wireframe' | 'points') => void;
   onResetView: () => void;
   onShare: () => void;
-  onExport: () => void;
   variant?: 'full' | 'demo';
   // Transform gizmo controls
   transformMode?: TransformMode | null;
   onTransformModeChange?: (mode: TransformMode | null) => void;
-  onResetTransform?: () => void;
-  onSaveTransform?: () => void;
-  canSaveTransform?: boolean;
-  isSavingTransform?: boolean;
   // Annotation panel
   onOpenAnnotationPanel?: () => void;
   annotationCount?: number;
   // Measurement panel
   onOpenMeasurementPanel?: () => void;
   measurementCount?: number;
+  // Saved views
+  onSaveView?: () => void;
+  savedViewCount?: number;
 }
 
 const iconMap: Record<string, React.ElementType> = {
@@ -64,7 +59,6 @@ const iconMap: Record<string, React.ElementType> = {
   Square,
   MessageSquare,
   Box,
-  Download,
   Share2,
 };
 
@@ -236,18 +230,15 @@ const ViewerToolbar = ({
   onViewModeChange,
   onResetView,
   onShare,
-  onExport,
   variant = 'full',
   transformMode,
   onTransformModeChange,
-  onResetTransform,
-  onSaveTransform,
-  canSaveTransform = false,
-  isSavingTransform = false,
   onOpenAnnotationPanel,
   annotationCount = 0,
   onOpenMeasurementPanel,
   measurementCount = 0,
+  onSaveView,
+  savedViewCount = 0,
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -288,36 +279,34 @@ const ViewerToolbar = ({
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
       <div className="flex items-center gap-1 px-3 py-2 rounded-xl bg-card/90 backdrop-blur-md border border-border shadow-lg">
-        {/* Navigate Tools */}
-        <div className="flex items-center gap-1">
-          <ToolButton
-            id="reset"
-            name="Reset View"
-            icon={Maximize}
-            active={false}
-            shortcut="V"
-            onClick={onResetView}
-          />
-        </div>
+        {/* Navigation */}
+        <ToolButton
+          id="reset"
+          name="Reset View"
+          icon={Maximize}
+          active={false}
+          shortcut="V"
+          onClick={onResetView}
+        />
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Transform Gizmo Controls */}
+        {/* Transform Tools (with visual container) */}
         {onTransformModeChange && (
           <>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-muted/30">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      'h-9 w-9 transition-all',
+                      'h-8 w-8 transition-all',
                       transformMode === 'translate' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
                     onClick={() => {
                       onTransformModeChange(transformMode === 'translate' ? null : 'translate');
-                      onToolChange(null); // Clear tool for mutual exclusivity
+                      onToolChange(null);
                     }}
                   >
                     <Move className="h-4 w-4" />
@@ -337,12 +326,12 @@ const ViewerToolbar = ({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      'h-9 w-9 transition-all',
+                      'h-8 w-8 transition-all',
                       transformMode === 'rotate' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
                     onClick={() => {
                       onTransformModeChange(transformMode === 'rotate' ? null : 'rotate');
-                      onToolChange(null); // Clear tool for mutual exclusivity
+                      onToolChange(null);
                     }}
                   >
                     <Rotate3D className="h-4 w-4" />
@@ -362,12 +351,12 @@ const ViewerToolbar = ({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      'h-9 w-9 transition-all',
+                      'h-8 w-8 transition-all',
                       transformMode === 'scale' && 'bg-primary/20 text-primary border border-primary/30'
                     )}
                     onClick={() => {
                       onTransformModeChange(transformMode === 'scale' ? null : 'scale');
-                      onToolChange(null); // Clear tool for mutual exclusivity
+                      onToolChange(null);
                     }}
                   >
                     <Maximize2 className="h-4 w-4" />
@@ -381,71 +370,13 @@ const ViewerToolbar = ({
                   <span className="text-xs text-muted-foreground">Drag handles to resize</span>
                 </TooltipContent>
               </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      'h-9 w-9 transition-all',
-                      transformMode === null && 'bg-muted/50'
-                    )}
-                    onClick={() => onTransformModeChange(null)}
-                  >
-                    <MousePointer className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="flex flex-col items-start gap-1">
-                  <div className="flex items-center gap-2">
-                    <span>Select</span>
-                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">Esc</kbd>
-                  </div>
-                  <span className="text-xs text-muted-foreground">Hide transform gizmo</span>
-                </TooltipContent>
-              </Tooltip>
-              {onResetTransform && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={onResetTransform}
-                    >
-                      <Undo2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">Reset transform</TooltipContent>
-                </Tooltip>
-              )}
-              {onSaveTransform && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-9 w-9',
-                        !canSaveTransform && 'opacity-50 cursor-not-allowed'
-                      )}
-                      onClick={onSaveTransform}
-                      disabled={!canSaveTransform || isSavingTransform}
-                    >
-                      <Save className={cn('h-4 w-4', isSavingTransform && 'animate-pulse')} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    {canSaveTransform ? 'Save transform' : 'Save not available in demo mode'}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
             <Separator orientation="vertical" className="h-6 mx-1" />
           </>
         )}
 
-        {/* Measure Tools - Consolidated Dropdown */}
-        <div className="flex items-center gap-1">
+        {/* Feature Tools (with visual container) */}
+        <div className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-muted/30">
           <MeasureToolDropdown
             activeTool={activeTool}
             onToolChange={onToolChange}
@@ -455,12 +386,6 @@ const ViewerToolbar = ({
             onOpenMeasurementPanel={onOpenMeasurementPanel}
             onTransformModeChange={onTransformModeChange}
           />
-        </div>
-
-        <Separator orientation="vertical" className="h-6 mx-1" />
-
-        {/* Annotations - Single consolidated button */}
-        <div className="flex items-center gap-1">
           {onOpenAnnotationPanel && (
             <div className="relative">
               <ToolButton
@@ -470,15 +395,12 @@ const ViewerToolbar = ({
                 active={activeTool === 'comment'}
                 shortcut="C"
                 onClick={() => {
-                  // Toggle tool state (like measurement tools do)
                   if (activeTool === 'comment') {
                     onToolChange(null);
                   } else {
                     onToolChange('comment');
-                    // Hide gizmo for mutual exclusivity
                     onTransformModeChange?.(null);
                   }
-                  // Also open the panel
                   onOpenAnnotationPanel();
                 }}
               />
@@ -489,12 +411,39 @@ const ViewerToolbar = ({
               )}
             </div>
           )}
+          {onSaveView && (
+            <div className="relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 transition-all"
+                    onClick={onSaveView}
+                  >
+                    <Bookmark className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span>Save View</span>
+                    <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded">Ctrl+Shift+V</kbd>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+              {savedViewCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center pointer-events-none">
+                  {savedViewCount > 9 ? '9+' : savedViewCount}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* View Tools */}
-        <div className="flex items-center gap-1">
+        {/* View Controls (with visual container) */}
+        <div className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-muted/30">
           <ToolButton
             id="wireframe"
             name="Wireframe Mode"
@@ -515,29 +464,17 @@ const ViewerToolbar = ({
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Export Tools */}
-        <div className="flex items-center gap-1">
-          <ToolButton
-            id="download"
-            name="Download"
-            icon={Download}
-            active={false}
-            disabled={!permissions.canExport}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            onClick={onExport}
-          />
-          <ToolButton
-            id="share"
-            name="Share"
-            icon={Share2}
-            active={false}
-            disabled={!permissions.canShare}
-            requiresAuth
-            isLoggedIn={isLoggedIn}
-            onClick={onShare}
-          />
-        </div>
+        {/* Share */}
+        <ToolButton
+          id="share"
+          name="Share"
+          icon={Share2}
+          active={false}
+          disabled={!permissions.canShare}
+          requiresAuth
+          isLoggedIn={isLoggedIn}
+          onClick={onShare}
+        />
       </div>
     </div>
   );

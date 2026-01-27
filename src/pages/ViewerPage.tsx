@@ -15,7 +15,7 @@ import { MeasurementIconOverlay, type MeasurementPointData } from '@/components/
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
 import { getProjectById as getMockProjectById, getScanById as getMockScanById } from '@/data/mockProjects';
 import { getProjectById as getSupabaseProject } from '@/lib/supabase/services/projects';
-import { getScanById as getSupabaseScan, getScanTransform, saveScanTransform } from '@/lib/supabase/services/scans';
+import { getScanById as getSupabaseScan, getScanTransform } from '@/lib/supabase/services/scans';
 import {
   getScanAnnotations,
   createAnnotation as createAnnotationService,
@@ -25,7 +25,13 @@ import {
   getScanMeasurements,
   createMeasurement as createMeasurementService,
   deleteMeasurement as deleteMeasurementService,
+  getScanWaypoints,
+  createWaypoint as createWaypointService,
+  deleteWaypoint as deleteWaypointService,
 } from '@/lib/supabase/services/annotations';
+import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
+import { SaveViewDialog } from '@/components/viewer/SaveViewDialog';
+import type { CameraState, SavedView } from '@/types/viewer';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
 import type { Annotation as DbAnnotation, AnnotationReply as DbAnnotationReply } from '@/lib/supabase/database.types';
@@ -121,6 +127,10 @@ const ViewerContent = () => {
     openCollaborationPanel,
     closeCollaborationPanel,
     setActiveCollaborationTab,
+    addSavedView,
+    removeSavedView,
+    loadSavedViews,
+    setActiveSavedView,
   } = useViewer();
 
   // Get current user ID (generate unique session ID for demo mode to isolate demo users)
@@ -144,7 +154,6 @@ const ViewerContent = () => {
   const [initialTransform, setInitialTransform] = useState<SplatTransform | undefined>(undefined);
   const [currentTransform, setCurrentTransform] = useState<SplatTransform | null>(null);
   const [savedTransform, setSavedTransform] = useState<SplatTransform | null>(null);
-  const [isSavingTransform, setIsSavingTransform] = useState(false);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const resetViewFnRef = useRef<(() => void) | null>(null);
 
@@ -158,6 +167,11 @@ const ViewerContent = () => {
 
   // Annotation persistence state
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
+
+  // Saved Views state
+  const [isSaveViewDialogOpen, setIsSaveViewDialogOpen] = useState(false);
+  const [pendingCameraState, setPendingCameraState] = useState<CameraState | null>(null);
+  const cameraAnimatorRef = useRef<CameraAnimator | null>(null);
 
   // Measurement point drag state (for direct drag with surface snap)
   const [draggingMeasurementPoint, setDraggingMeasurementPoint] = useState<{
@@ -327,6 +341,35 @@ const ViewerContent = () => {
               }
             } catch {
               // Don't block the viewer for measurement errors
+            }
+
+            // Load saved views (camera waypoints) from Supabase
+            try {
+              const waypointsData = await getScanWaypoints(scanId);
+              if (waypointsData && waypointsData.length > 0) {
+                // Convert database format to viewer format
+                const viewerSavedViews: SavedView[] = waypointsData.map(wp => {
+                  const positionJson = wp.position_json as { x: number; y: number; z: number };
+                  const targetJson = wp.target_json as { x: number; y: number; z: number };
+                  return {
+                    id: wp.id,
+                    scanId: wp.scan_id,
+                    name: wp.name,
+                    camera: {
+                      position: positionJson,
+                      target: targetJson,
+                      fov: wp.fov || 50,
+                    },
+                    thumbnail: wp.thumbnail_url || undefined,
+                    sortOrder: wp.sort_order || 0,
+                    createdBy: wp.created_by,
+                    createdAt: wp.created_at,
+                  };
+                });
+                loadSavedViews(viewerSavedViews);
+              }
+            } catch {
+              // Don't block the viewer for saved views errors
             }
 
             setIsDataLoading(false);
@@ -549,39 +592,106 @@ const ViewerContent = () => {
     setCurrentTransform(transform);
   }, []);
 
-  // Reset transform to saved or default
-  const handleResetTransform = useCallback(() => {
-    const transform = savedTransform ?? DEFAULT_SPLAT_TRANSFORM;
-    sceneManagerRef.current?.setSplatTransform(transform);
-    setCurrentTransform(transform);
-  }, [savedTransform]);
-
-  // Save current transform to database
-  const handleSaveTransform = useCallback(async () => {
-    if (!scanId || !isSupabaseConfigured()) return;
-
-    const transform = sceneManagerRef.current?.getSplatTransform();
-    if (!transform) return;
-
-    setIsSavingTransform(true);
-    try {
-      const { error } = await saveScanTransform(scanId, transform);
-      if (!error) {
-        setSavedTransform(transform);
-      }
-    } finally {
-      setIsSavingTransform(false);
-    }
-  }, [scanId]);
-
-  // Can save transform if user has measure permission (proxy for editor/owner)
-  // and Supabase is configured (not in demo mode)
-  const canSaveTransform = permissions.canMeasure && isSupabaseConfigured();
-
   // Reset view
   const handleResetView = useCallback(() => {
     resetViewFnRef.current?.();
   }, []);
+
+  // Handle save current view - captures camera state and opens dialog
+  const handleSaveCurrentView = useCallback(() => {
+    const animator = cameraAnimatorRef.current;
+    if (!animator) return;
+
+    const cameraState = animator.getCurrentState();
+    setPendingCameraState({
+      position: { x: cameraState.position.x, y: cameraState.position.y, z: cameraState.position.z },
+      target: { x: cameraState.target.x, y: cameraState.target.y, z: cameraState.target.z },
+      fov: cameraState.fov || 50,
+    });
+    setIsSaveViewDialogOpen(true);
+  }, []);
+
+  // Handle save view submit - persists to Supabase and local state
+  const handleSaveViewSubmit = useCallback(async (name: string) => {
+    if (!pendingCameraState || !scanId) return;
+
+    // Generate default name based on existing views count
+    const viewName = name || `View ${state.savedViews.length + 1}`;
+
+    // Create saved view object
+    const savedView: Omit<SavedView, 'id' | 'createdAt' | 'sortOrder'> = {
+      scanId,
+      name: viewName,
+      camera: pendingCameraState,
+      createdBy: currentUserId,
+    };
+
+    // Persist to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        const { data: createdWaypoint } = await createWaypointService({
+          scan_id: scanId,
+          name: viewName,
+          position_json: pendingCameraState.position,
+          target_json: pendingCameraState.target,
+          fov: pendingCameraState.fov,
+          sort_order: state.savedViews.length,
+          created_by: currentUserId,
+        });
+
+        // Add to local state with database ID
+        if (createdWaypoint) {
+          addSavedView({
+            ...savedView,
+            id: createdWaypoint.id,
+          } as Parameters<typeof addSavedView>[0]);
+        } else {
+          // Fallback - add to local state without database ID
+          addSavedView(savedView);
+        }
+      } catch {
+        // Fallback to local-only
+        addSavedView(savedView);
+      }
+    } else {
+      // Demo mode - local state only
+      addSavedView(savedView);
+    }
+
+    // Clear pending state
+    setPendingCameraState(null);
+    setIsSaveViewDialogOpen(false);
+  }, [pendingCameraState, scanId, currentUserId, state.savedViews.length, addSavedView]);
+
+  // Handle select view - fly to saved view with smooth animation
+  const handleSelectView = useCallback(async (viewId: string) => {
+    const savedView = state.savedViews.find(v => v.id === viewId);
+    if (!savedView) return;
+
+    const animator = cameraAnimatorRef.current;
+    if (!animator) return;
+
+    // Set active view
+    setActiveSavedView(viewId);
+
+    // Fly to the saved view position with smooth animation
+    await animator.flyToSavedView(savedView.camera, { duration: 1000 });
+  }, [state.savedViews, setActiveSavedView]);
+
+  // Handle delete view - remove from local state and Supabase
+  const handleDeleteView = useCallback(async (viewId: string) => {
+    // Remove from local state immediately
+    removeSavedView(viewId);
+
+    // Delete from Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await deleteWaypointService(viewId);
+      } catch {
+        // Error deleting view - already removed locally
+      }
+    }
+  }, [removeSavedView]);
 
   // Keyboard shortcuts for transform modes and view controls
   useEffect(() => {
@@ -631,8 +741,14 @@ const ViewerContent = () => {
           clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'v':
-          // V for reset view
-          handleResetView();
+          // Ctrl+Shift+V for save current view
+          if (event.ctrlKey && event.shiftKey) {
+            handleSaveCurrentView();
+            event.preventDefault();
+          } else {
+            // V for reset view
+            handleResetView();
+          }
           break;
         case 't':
           // T for toggle grid
@@ -669,7 +785,7 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, handleResetView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel]);
+  }, [transformMode, toggleGrid, handleResetView, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -831,11 +947,6 @@ const ViewerContent = () => {
     setShowSharePanel(true);
   }, []);
 
-  // Handle export
-  const handleExport = useCallback(() => {
-    setShowSharePanel(true);
-  }, []);
-
   // Handle measurement point drag start (for direct drag with surface snap)
   const handleMeasurementPointDragStart = useCallback((point: { measurementId: string; pointIndex: number }) => {
     setDraggingMeasurementPoint(point);
@@ -924,6 +1035,9 @@ const ViewerContent = () => {
           onSplatLoadError={(err) => {
             setIsLoading(false);
             setLoadError({ message: err.message });
+          }}
+          onCameraAnimatorReady={(animator) => {
+            cameraAnimatorRef.current = animator;
           }}
         />
 
@@ -1018,7 +1132,7 @@ const ViewerContent = () => {
 
       {/* Collaboration Panel (replaces ViewerSidebar and AnnotationPanel) */}
       {state.isCollaborationPanelOpen && (
-        <div className="absolute right-0 top-16 bottom-0 w-96 z-20">
+        <div className="absolute right-4 top-20 w-96 z-20">
           <CollaborationPanel
             activeTab={state.activeCollaborationTab}
             onTabChange={setActiveCollaborationTab}
@@ -1041,6 +1155,15 @@ const ViewerContent = () => {
             permissions={permissions}
             onSelectMeasurement={selectMeasurement}
             onDeleteMeasurement={handleMeasurementDelete}
+            onStartMeasurement={() => {
+              setActiveTool('distance');
+              closeCollaborationPanel();
+            }}
+            savedViews={state.savedViews}
+            activeSavedViewId={state.activeSavedViewId}
+            onSelectView={handleSelectView}
+            onDeleteView={handleDeleteView}
+            onSaveCurrentView={handleSaveCurrentView}
           />
         </div>
       )}
@@ -1056,13 +1179,8 @@ const ViewerContent = () => {
         onViewModeChange={setViewMode}
         onResetView={handleResetView}
         onShare={handleShare}
-        onExport={handleExport}
         transformMode={transformMode}
         onTransformModeChange={handleTransformModeChange}
-        onResetTransform={handleResetTransform}
-        onSaveTransform={handleSaveTransform}
-        canSaveTransform={canSaveTransform}
-        isSavingTransform={isSavingTransform}
         onOpenAnnotationPanel={() => {
           openCollaborationPanel('annotations');
         }}
@@ -1071,6 +1189,8 @@ const ViewerContent = () => {
         onOpenMeasurementPanel={() => {
           openCollaborationPanel('measurements');
         }}
+        onSaveView={handleSaveCurrentView}
+        savedViewCount={state.savedViews.length}
       />
 
       {/* Share Panel */}
@@ -1092,6 +1212,17 @@ const ViewerContent = () => {
         userId={currentUserId}
         type={state.activeTool === 'pin' ? 'pin' : 'comment'}
         onSubmit={handleAnnotationSubmit}
+      />
+
+      {/* Save View Dialog for naming new saved views */}
+      <SaveViewDialog
+        isOpen={isSaveViewDialogOpen}
+        onClose={() => {
+          setIsSaveViewDialogOpen(false);
+          setPendingCameraState(null);
+        }}
+        onSave={handleSaveViewSubmit}
+        defaultName={`View ${state.savedViews.length + 1}`}
       />
     </div>
   );

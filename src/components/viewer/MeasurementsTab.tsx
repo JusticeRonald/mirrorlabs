@@ -1,4 +1,4 @@
-import { Ruler, Square, Trash2 } from 'lucide-react';
+import { Ruler, Square, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ interface MeasurementsTabProps {
   selectedMeasurementId?: string | null;
   onSelectMeasurement?: (id: string) => void;
   onDeleteMeasurement?: (id: string) => void;
+  onStartMeasurement?: () => void;
   readOnly?: boolean;
 }
 
@@ -30,6 +31,7 @@ export function MeasurementsTab({
   selectedMeasurementId,
   onSelectMeasurement,
   onDeleteMeasurement,
+  onStartMeasurement,
   readOnly = false,
 }: MeasurementsTabProps) {
   const formatMeasurementValue = (measurement: Measurement) => {
@@ -47,15 +49,31 @@ export function MeasurementsTab({
   };
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="p-3 space-y-2">
-        {measurements.length === 0 ? (
-          <div className="text-center py-8 text-neutral-500 text-sm">
-            <Ruler className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No measurements yet</p>
-            <p className="text-xs mt-1">Press D to start measuring</p>
-          </div>
-        ) : (
+    <div className="flex flex-col h-full">
+      {/* New Measurement Button */}
+      {permissions.canMeasure && onStartMeasurement && !readOnly && (
+        <div className="p-3 border-b border-neutral-800">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 text-neutral-200 border-neutral-700 hover:bg-neutral-800 hover:text-white"
+            onClick={onStartMeasurement}
+          >
+            <Plus className="h-4 w-4" />
+            New Measurement
+          </Button>
+        </div>
+      )}
+
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-2">
+          {measurements.length === 0 ? (
+            <div className="text-center py-8 text-neutral-500 text-sm">
+              <Ruler className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No measurements yet</p>
+              <p className="text-xs mt-1">Press D to start measuring</p>
+            </div>
+          ) : (
           measurements.map((m, index) => {
             const MeasurementIcon = m.type === 'distance' ? Ruler : Square;
             const iconColor = m.type === 'distance' ? 'text-blue-500' : 'text-purple-500';
@@ -105,6 +123,7 @@ export function MeasurementsTab({
         )}
       </div>
     </ScrollArea>
+    </div>
   );
 }
 
