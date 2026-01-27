@@ -161,6 +161,8 @@ interface MeasurementIconOverlayProps {
   onPointHover?: (point: MeasurementPointData | null) => void;
   /** Drag start handler (for direct dragging with surface snap) */
   onPointDragStart?: (point: MeasurementPointData) => void;
+  /** Optional function to get live world position (for transform following) */
+  getWorldPosition?: (measurementId: string, pointIndex: number) => THREE.Vector3 | null;
 }
 
 /**
@@ -179,6 +181,7 @@ export function MeasurementIconOverlay({
   onPointClick,
   onPointHover,
   onPointDragStart,
+  getWorldPosition,
 }: MeasurementIconOverlayProps) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   // Force re-render on each animation frame to update icon positions
@@ -232,10 +235,13 @@ export function MeasurementIconOverlay({
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
       {points.map((point) => {
         const pointId = getPointId(point);
+        // Get live world position if function provided, otherwise use passed position
+        const livePosition = getWorldPosition?.(point.measurementId, point.pointIndex) ?? point.position;
+        const pointWithLivePosition = { ...point, position: livePosition };
         return (
           <MeasurementPointIcon
             key={pointId}
-            point={point}
+            point={pointWithLivePosition}
             camera={camera}
             containerWidth={dimensions.width}
             containerHeight={dimensions.height}

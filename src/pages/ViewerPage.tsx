@@ -1,21 +1,23 @@
 import { useParams, Navigate } from 'react-router-dom';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewerProvider, useViewer } from '@/contexts/ViewerContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Viewer3D from '@/components/viewer/Viewer3D';
 import ViewerToolbar from '@/components/viewer/ViewerToolbar';
 import ViewerHeader from '@/components/viewer/ViewerHeader';
-import { CollaborationPanel, type CollaborationTab } from '@/components/viewer/CollaborationPanel';
+import { CollaborationPanel, type CollaborationTab, type MeasurementToolType } from '@/components/viewer/CollaborationPanel';
 import ViewerSharePanel from '@/components/viewer/ViewerSharePanel';
 import ViewerLoadingOverlay from '@/components/viewer/ViewerLoadingOverlay';
 import AnnotationModal from '@/components/viewer/AnnotationModal';
 import { AnnotationIconOverlay } from '@/components/viewer/AnnotationMarker';
 import { MeasurementIconOverlay, type MeasurementPointData } from '@/components/viewer/MeasurementMarker';
+import { AxisNavigator, type ViewDirection } from '@/components/viewer/AxisNavigator';
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
 import { getProjectById as getMockProjectById, getScanById as getMockScanById } from '@/data/mockProjects';
 import { getProjectById as getSupabaseProject } from '@/lib/supabase/services/projects';
-import { getScanById as getSupabaseScan, getScanTransform } from '@/lib/supabase/services/scans';
+import { getScanById as getSupabaseScan, getScanTransform, saveScanTransform } from '@/lib/supabase/services/scans';
 import {
   getScanAnnotations,
   createAnnotation as createAnnotationService,
@@ -164,6 +166,10 @@ const ViewerContent = () => {
   // Camera state for HTML annotation overlay
   const [camera, setCamera] = useState<THREE.PerspectiveCamera | null>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Renderer and controls state for axis navigator gizmo
+  const [renderer, setRenderer] = useState<THREE.WebGLRenderer | null>(null);
+  const [controls, setControls] = useState<OrbitControls | null>(null);
 
   // Annotation persistence state
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
@@ -597,6 +603,38 @@ const ViewerContent = () => {
     resetViewFnRef.current?.();
   }, []);
 
+  // Reset transform to initial/saved state
+  const handleResetTransform = useCallback(() => {
+    if (sceneManagerRef.current && initialTransform) {
+      sceneManagerRef.current.setSplatTransform(initialTransform);
+      setCurrentTransform(initialTransform);
+    }
+  }, [initialTransform]);
+
+  // Save current transform to Supabase
+  const handleSaveTransform = useCallback(async () => {
+    if (!scanId || !currentTransform) return;
+
+    if (isSupabaseConfigured()) {
+      try {
+        await saveScanTransform(scanId, currentTransform);
+        setSavedTransform(currentTransform);
+        setInitialTransform(currentTransform); // Update initial so reset goes to saved state
+      } catch {
+        // Error saving transform - could show toast notification
+      }
+    } else {
+      // Demo mode - just update local state
+      setSavedTransform(currentTransform);
+      setInitialTransform(currentTransform);
+    }
+  }, [scanId, currentTransform]);
+
+  // Check if transform has unsaved changes
+  const hasUnsavedTransform = currentTransform !== null &&
+    savedTransform !== null &&
+    JSON.stringify(currentTransform) !== JSON.stringify(savedTransform);
+
   // Handle save current view - captures camera state and opens dialog
   const handleSaveCurrentView = useCallback(() => {
     const animator = cameraAnimatorRef.current;
@@ -678,6 +716,52 @@ const ViewerContent = () => {
     await animator.flyToSavedView(savedView.camera, { duration: 1000 });
   }, [state.savedViews, setActiveSavedView]);
 
+  // Handle view snap from axis navigator - fly to orthographic view
+  const handleViewSnap = useCallback(async (view: ViewDirection) => {
+    const animator = cameraAnimatorRef.current;
+    if (!animator) return;
+
+    // Get current camera distance from target to maintain zoom level
+    const currentState = animator.getCurrentState();
+    const distance = currentState.position.distanceTo(currentState.target);
+    const target = currentState.target.clone();
+
+    // Calculate camera position based on view direction
+    let cameraPosition: THREE.Vector3;
+    switch (view) {
+      case 'front':
+        // +Z looking at -Z
+        cameraPosition = new THREE.Vector3(target.x, target.y, target.z + distance);
+        break;
+      case 'back':
+        // -Z looking at +Z
+        cameraPosition = new THREE.Vector3(target.x, target.y, target.z - distance);
+        break;
+      case 'top':
+        // +Y looking down at -Y
+        cameraPosition = new THREE.Vector3(target.x, target.y + distance, target.z);
+        break;
+      case 'bottom':
+        // -Y looking up at +Y
+        cameraPosition = new THREE.Vector3(target.x, target.y - distance, target.z);
+        break;
+      case 'right':
+        // +X looking at -X
+        cameraPosition = new THREE.Vector3(target.x + distance, target.y, target.z);
+        break;
+      case 'left':
+        // -X looking at +X
+        cameraPosition = new THREE.Vector3(target.x - distance, target.y, target.z);
+        break;
+    }
+
+    // Fly to the view position
+    await animator.flyTo(
+      { position: cameraPosition, target },
+      { duration: 500 }
+    );
+  }, []);
+
   // Handle delete view - remove from local state and Supabase
   const handleDeleteView = useCallback(async (viewId: string) => {
     // Remove from local state immediately
@@ -729,15 +813,27 @@ const ViewerContent = () => {
           clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'c':
-          // C for comment tool
-          setActiveTool(state.activeTool === 'comment' ? null : 'comment');
-          setTransformMode(null); // Hide gizmo for mutual exclusivity
+          // C for comment tool - also opens panel
+          if (state.activeTool === 'comment') {
+            setActiveTool(null);
+            closeCollaborationPanel();
+          } else {
+            setActiveTool('comment');
+            setTransformMode(null); // Hide gizmo for mutual exclusivity
+            openCollaborationPanel('annotations');
+          }
           clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'd':
-          // D for distance tool
-          setActiveTool(state.activeTool === 'distance' ? null : 'distance');
-          setTransformMode(null); // Hide gizmo for mutual exclusivity
+          // D for distance tool - also opens panel
+          if (state.activeTool === 'distance') {
+            setActiveTool(null);
+            closeCollaborationPanel();
+          } else {
+            setActiveTool('distance');
+            setTransformMode(null); // Hide gizmo for mutual exclusivity
+            openCollaborationPanel('measurements');
+          }
           clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'v':
@@ -749,6 +845,10 @@ const ViewerContent = () => {
             // V for reset view
             handleResetView();
           }
+          break;
+        case 'x':
+          // X for reset transform
+          handleResetTransform();
           break;
         case 't':
           // T for toggle grid
@@ -766,7 +866,7 @@ const ViewerContent = () => {
           }
           break;
         case 'escape':
-          // Escape to cancel pending measurement, hide gizmo, clear point selection, or clear annotation selection
+          // Escape to cancel pending measurement, hide gizmo, clear point selection, collapse panel, or clear annotation selection
           if (state.pendingMeasurement) {
             cancelMeasurement();
           } else if (state.selectedMeasurementPoint) {
@@ -775,6 +875,10 @@ const ViewerContent = () => {
           } else if (state.selectedAnnotationId) {
             selectAnnotation(null);
             closeCollaborationPanel();
+          } else if (state.isCollaborationPanelOpen) {
+            // Collapse panel if expanded
+            closeCollaborationPanel();
+            setActiveTool(null);
           } else {
             setTransformMode(null);
             setActiveTool(null);
@@ -785,7 +889,7 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, handleResetView, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel]);
+  }, [transformMode, toggleGrid, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -1039,16 +1143,17 @@ const ViewerContent = () => {
           onCameraAnimatorReady={(animator) => {
             cameraAnimatorRef.current = animator;
           }}
+          onRendererReady={setRenderer}
+          onControlsReady={setControls}
         />
 
         {/* HTML Annotation Icon Overlay */}
         <AnnotationIconOverlay
           annotations={state.annotations.map(a => {
-            // Get world position from SceneManager (handles transform parenting)
-            const worldPos = sceneManager?.getAnnotationWorldPosition(a.id);
-            const position = worldPos ?? (a.position instanceof THREE.Vector3
+            // Use fallback position for initial render, getWorldPosition provides live updates
+            const position = a.position instanceof THREE.Vector3
               ? a.position
-              : new THREE.Vector3(a.position.x, a.position.y, a.position.z));
+              : new THREE.Vector3(a.position.x, a.position.y, a.position.z);
             return {
               data: {
                 id: a.id,
@@ -1073,15 +1178,15 @@ const ViewerContent = () => {
           }}
           onAnnotationHover={(ann) => hoverAnnotation(ann?.id ?? null)}
           onAnnotationDragStart={(ann) => handleAnnotationDragStart(ann.id)}
+          getWorldPosition={(id) => sceneManagerRef.current?.getAnnotationWorldPosition(id) ?? null}
         />
 
         {/* HTML Measurement Point Overlay */}
         <MeasurementIconOverlay
           points={state.measurements.flatMap(m =>
             m.points.map((p, i) => {
-              // Get world position from SceneManager (handles transform parenting)
-              const worldPos = sceneManager?.getMeasurementPointWorldPosition(m.id, i);
-              const position = worldPos ?? (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p.x, p.y, p.z));
+              // Use fallback position for initial render, getWorldPosition provides live updates
+              const position = p instanceof THREE.Vector3 ? p : new THREE.Vector3(p.x, p.y, p.z);
               return {
                 measurementId: m.id,
                 pointIndex: i,
@@ -1111,6 +1216,9 @@ const ViewerContent = () => {
             measurementId: point.measurementId,
             pointIndex: point.pointIndex,
           })}
+          getWorldPosition={(measurementId, pointIndex) =>
+            sceneManagerRef.current?.getMeasurementPointWorldPosition(measurementId, pointIndex) ?? null
+          }
         />
       </div>
 
@@ -1121,6 +1229,17 @@ const ViewerContent = () => {
         error={loadError}
       />
 
+      {/* 3D Axis Navigator - top-right corner */}
+      <div className="absolute top-20 right-6 z-20">
+        <AxisNavigator
+          camera={camera}
+          renderer={renderer}
+          controls={controls}
+          size={140}
+          onViewChange={handleViewSnap}
+        />
+      </div>
+
       {/* Header */}
       <ViewerHeader
         project={project}
@@ -1130,45 +1249,57 @@ const ViewerContent = () => {
         onShare={handleShare}
       />
 
-      {/* Collaboration Panel (replaces ViewerSidebar and AnnotationPanel) */}
-      {state.isCollaborationPanelOpen && (
-        <div className="absolute right-4 top-20 w-96 z-20">
-          <CollaborationPanel
-            activeTab={state.activeCollaborationTab}
-            onTabChange={setActiveCollaborationTab}
-            onClose={closeCollaborationPanel}
-            activeTool={state.activeTool}
-            annotations={state.annotations}
-            selectedAnnotationId={state.selectedAnnotationId}
-            currentUserId={currentUserId}
-            canEditAnnotations={permissions.canAnnotate}
-            onSelectAnnotation={(ann) => selectAnnotation(ann.id)}
-            onAnnotationStatusChange={handleAnnotationStatusChange}
-            onDeleteAnnotation={handleAnnotationDelete}
-            onAddAnnotationReply={handleAnnotationReply}
-            onAddAnnotation={() => {
-              setActiveTool('comment');
+      {/* Collaboration Panel - Always visible, collapsed shows icon strip only */}
+      <div className="absolute right-6 top-1/2 -translate-y-1/2 z-10">
+        <CollaborationPanel
+          isExpanded={state.isCollaborationPanelOpen}
+          onExpandedChange={(expanded) => {
+            if (expanded) {
+              openCollaborationPanel();
+            } else {
               closeCollaborationPanel();
-            }}
-            measurements={state.measurements}
-            selectedMeasurementId={state.selectedMeasurementId}
-            permissions={permissions}
-            onSelectMeasurement={selectMeasurement}
-            onDeleteMeasurement={handleMeasurementDelete}
-            onStartMeasurement={() => {
-              setActiveTool('distance');
-              closeCollaborationPanel();
-            }}
-            savedViews={state.savedViews}
-            activeSavedViewId={state.activeSavedViewId}
-            onSelectView={handleSelectView}
-            onDeleteView={handleDeleteView}
-            onSaveCurrentView={handleSaveCurrentView}
-          />
-        </div>
-      )}
+            }
+          }}
+          activeTab={state.activeCollaborationTab}
+          onTabChange={setActiveCollaborationTab}
+          activeTool={state.activeTool}
+          onToolChange={(tool) => {
+            setActiveTool(tool);
+            // Clear transform mode when activating a tool
+            if (tool) {
+              setTransformMode(null);
+            }
+          }}
+          annotations={state.annotations}
+          selectedAnnotationId={state.selectedAnnotationId}
+          currentUserId={currentUserId}
+          canEditAnnotations={permissions.canAnnotate}
+          onSelectAnnotation={(ann) => selectAnnotation(ann.id)}
+          onAnnotationStatusChange={handleAnnotationStatusChange}
+          onDeleteAnnotation={handleAnnotationDelete}
+          onAddAnnotationReply={handleAnnotationReply}
+          onAddAnnotation={() => {
+            setActiveTool('comment');
+            closeCollaborationPanel();
+          }}
+          measurements={state.measurements}
+          selectedMeasurementId={state.selectedMeasurementId}
+          permissions={permissions}
+          onSelectMeasurement={selectMeasurement}
+          onDeleteMeasurement={handleMeasurementDelete}
+          onStartMeasurement={(type: MeasurementToolType) => {
+            setActiveTool(type);
+            setTransformMode(null);
+          }}
+          savedViews={state.savedViews}
+          activeSavedViewId={state.activeSavedViewId}
+          onSelectView={handleSelectView}
+          onDeleteView={handleDeleteView}
+          onSaveCurrentView={handleSaveCurrentView}
+        />
+      </div>
 
-      {/* Toolbar */}
+      {/* Toolbar - Navigation & Manipulation only */}
       <ViewerToolbar
         activeTool={state.activeTool}
         onToolChange={setActiveTool}
@@ -1181,16 +1312,9 @@ const ViewerContent = () => {
         onShare={handleShare}
         transformMode={transformMode}
         onTransformModeChange={handleTransformModeChange}
-        onOpenAnnotationPanel={() => {
-          openCollaborationPanel('annotations');
-        }}
-        annotationCount={state.annotations.length}
-        measurementCount={state.measurements.length}
-        onOpenMeasurementPanel={() => {
-          openCollaborationPanel('measurements');
-        }}
-        onSaveView={handleSaveCurrentView}
-        savedViewCount={state.savedViews.length}
+        onResetTransform={handleResetTransform}
+        onSaveTransform={handleSaveTransform}
+        hasUnsavedTransform={hasUnsavedTransform}
       />
 
       {/* Share Panel */}

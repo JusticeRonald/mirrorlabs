@@ -64,6 +64,12 @@ interface Viewer3DProps {
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
   /** Callback to expose the CameraAnimator to parent for saved views fly-to */
   onCameraAnimatorReady?: (animator: CameraAnimator) => void;
+  /** Callback for camera quaternion updates (for axis navigator) */
+  onCameraQuaternionUpdate?: (quaternion: THREE.Quaternion) => void;
+  /** Callback to expose the WebGL renderer to parent */
+  onRendererReady?: (renderer: THREE.WebGLRenderer) => void;
+  /** Callback to expose the OrbitControls to parent */
+  onControlsReady?: (controls: OrbitControls) => void;
 }
 
 const Viewer3D = ({
@@ -101,6 +107,9 @@ const Viewer3D = ({
   onAnnotationDragEnd,
   onAnnotationMove,
   onCameraAnimatorReady,
+  onCameraQuaternionUpdate,
+  onRendererReady,
+  onControlsReady,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -110,6 +119,8 @@ const Viewer3D = ({
   const transformControlsRef = useRef<TransformControls | null>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+  const xAxisLineRef = useRef<THREE.Line | null>(null);
+  const zAxisLineRef = useRef<THREE.Line | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const isSplatLoadingRef = useRef<boolean>(false);
@@ -145,6 +156,9 @@ const Viewer3D = ({
   const onAnnotationDragEndRef = useRef(onAnnotationDragEnd);
   const onAnnotationMoveRef = useRef(onAnnotationMove);
   const onCameraAnimatorReadyRef = useRef(onCameraAnimatorReady);
+  const onCameraQuaternionUpdateRef = useRef(onCameraQuaternionUpdate);
+  const onRendererReadyRef = useRef(onRendererReady);
+  const onControlsReadyRef = useRef(onControlsReady);
 
   // Keep callback refs updated
   // Intentionally no deps - refs should always have latest callback values to avoid stale closures
@@ -169,6 +183,9 @@ const Viewer3D = ({
     onAnnotationDragEndRef.current = onAnnotationDragEnd;
     onAnnotationMoveRef.current = onAnnotationMove;
     onCameraAnimatorReadyRef.current = onCameraAnimatorReady;
+    onCameraQuaternionUpdateRef.current = onCameraQuaternionUpdate;
+    onRendererReadyRef.current = onRendererReady;
+    onControlsReadyRef.current = onControlsReady;
   });
 
   // Track pointer position on mousedown for drag detection
@@ -366,10 +383,16 @@ const Viewer3D = ({
     }
   }, [viewMode]);
 
-  // Update grid visibility
+  // Update grid visibility (includes axis lines)
   useEffect(() => {
     if (gridRef.current) {
       gridRef.current.visible = showGrid;
+    }
+    if (xAxisLineRef.current) {
+      xAxisLineRef.current.visible = showGrid;
+    }
+    if (zAxisLineRef.current) {
+      zAxisLineRef.current.visible = showGrid;
     }
   }, [showGrid]);
 
@@ -470,6 +493,9 @@ const Viewer3D = ({
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Notify parent that renderer is ready (for axis navigator gizmo)
+    onRendererReadyRef.current?.(renderer);
+
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -479,6 +505,9 @@ const Viewer3D = ({
     controls.maxDistance = 500;
     controls.enableZoom = enableZoom;
     controlsRef.current = controls;
+
+    // Notify parent that controls are ready (for axis navigator gizmo)
+    onControlsReadyRef.current?.(controls);
 
     // Transform Controls (for gizmo manipulation)
     const transformControls = new TransformControls(camera, renderer.domElement);
@@ -570,11 +599,35 @@ const Viewer3D = ({
     directionalLight2.position.set(-10, -10, -5);
     scene.add(directionalLight2);
 
-    // Grid - Amber themed
-    const gridHelper = new THREE.GridHelper(20, 20, 0xFBBF24, 0x92400E);
+    // Grid - neutral white/gray lines
+    const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
     gridHelper.visible = showGrid;
     scene.add(gridHelper);
     gridRef.current = gridHelper;
+
+    // X-axis line (red) - ground plane
+    const xAxisMaterial = new THREE.LineBasicMaterial({ color: 0xff4444 });
+    const xAxisPoints = [
+      new THREE.Vector3(-10, 0, 0),
+      new THREE.Vector3(10, 0, 0)
+    ];
+    const xAxisGeometry = new THREE.BufferGeometry().setFromPoints(xAxisPoints);
+    const xAxisLine = new THREE.Line(xAxisGeometry, xAxisMaterial);
+    xAxisLine.visible = showGrid;
+    scene.add(xAxisLine);
+    xAxisLineRef.current = xAxisLine;
+
+    // Z-axis line (blue) - ground plane
+    const zAxisMaterial = new THREE.LineBasicMaterial({ color: 0x4444ff });
+    const zAxisPoints = [
+      new THREE.Vector3(0, 0, -10),
+      new THREE.Vector3(0, 0, 10)
+    ];
+    const zAxisGeometry = new THREE.BufferGeometry().setFromPoints(zAxisPoints);
+    const zAxisLine = new THREE.Line(zAxisGeometry, zAxisMaterial);
+    zAxisLine.visible = showGrid;
+    scene.add(zAxisLine);
+    zAxisLineRef.current = zAxisLine;
 
     // Only add placeholder geometry if no splat URL is provided
     if (!splatUrl) {
@@ -636,6 +689,9 @@ const Viewer3D = ({
       }
 
       renderer.render(scene, camera);
+
+      // Notify parent of camera quaternion for axis navigator
+      onCameraQuaternionUpdateRef.current?.(camera.quaternion);
     };
     animate();
 

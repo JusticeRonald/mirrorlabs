@@ -411,6 +411,8 @@ interface AnnotationIconOverlayProps {
   onAnnotationHover?: (annotation: AnnotationData | null) => void;
   /** Drag start handler (for direct dragging with surface snap) */
   onAnnotationDragStart?: (annotation: AnnotationData) => void;
+  /** Optional function to get live world position (for transform following) */
+  getWorldPosition?: (id: string) => THREE.Vector3 | null;
 }
 
 /**
@@ -428,6 +430,7 @@ export function AnnotationIconOverlay({
   onAnnotationClick,
   onAnnotationHover,
   onAnnotationDragStart,
+  getWorldPosition,
 }: AnnotationIconOverlayProps) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   // Force re-render on each animation frame to update icon positions
@@ -476,21 +479,25 @@ export function AnnotationIconOverlay({
 
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
-      {annotations.map(({ data, position }) => (
-        <AnnotationIcon
-          key={data.id}
-          annotation={data}
-          position={position}
-          camera={camera}
-          containerWidth={dimensions.width}
-          containerHeight={dimensions.height}
-          isHovered={hoveredId === data.id}
-          isSelected={selectedId === data.id}
-          onClick={onAnnotationClick}
-          onHover={onAnnotationHover}
-          onDragStart={onAnnotationDragStart}
-        />
-      ))}
+      {annotations.map(({ data, position }) => {
+        // Get live world position if function provided, otherwise use passed position
+        const livePosition = getWorldPosition?.(data.id) ?? position;
+        return (
+          <AnnotationIcon
+            key={data.id}
+            annotation={data}
+            position={livePosition}
+            camera={camera}
+            containerWidth={dimensions.width}
+            containerHeight={dimensions.height}
+            isHovered={hoveredId === data.id}
+            isSelected={selectedId === data.id}
+            onClick={onAnnotationClick}
+            onHover={onAnnotationHover}
+            onDragStart={onAnnotationDragStart}
+          />
+        );
+      })}
     </div>
   );
 }
