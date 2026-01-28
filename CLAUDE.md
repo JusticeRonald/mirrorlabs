@@ -368,6 +368,41 @@ Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Bot
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
 
+## Code Review Summary (January 28, 2026)
+
+Refactored annotation and measurement repositioning, improved point cloud mode:
+
+### Changes Made
+| Category | Summary |
+|----------|---------|
+| **UX Simplification** | Removed click-to-relocate, keeping gizmo-only repositioning |
+| **Point Cloud Mode** | Markers hidden during point cloud view, transform delta applied on mode switch |
+| **Overlay Sync** | Point cloud overlay now syncs transform every frame during gizmo drags |
+
+### Files Modified
+- `src/components/viewer/Viewer3D.tsx` - Removed click handlers, cursor branches, unused refs; added syncOverlay call
+- `src/lib/viewer/SceneManager.ts` - Marker visibility/reparenting during point cloud mode, transform delta calculation
+- `src/lib/viewer/AnnotationRenderer.ts` - Added setVisible, setParentObject, applyWorldTransform methods
+- `src/lib/viewer/MeasurementRenderer.ts` - Added setVisible, setParentObject, applyWorldTransform methods
+- `src/lib/viewer/SplatVisualizationOverlay.ts` - Added syncTransform method for per-frame alignment
+- `src/lib/viewer/renderers/SparkSplatRenderer.ts` - Added updateOverlay method
+- `src/lib/viewer/renderers/GaussianSplatRenderer.ts` - Added updateOverlay to interface
+- `src/contexts/ViewerContext.tsx` - Minor state management updates
+- `src/pages/ViewerPage.tsx` - Selection clearing on delete, hide HTML overlays in point cloud mode
+
+### Rationale
+Click-to-relocate conflicted with the TransformControls gizmo when the crosshair
+cursor got close to gizmo axes. Gizmo-only repositioning provides cleaner UX.
+
+### What Still Works
+- Annotation/measurement selection (clicking markers)
+- Gizmo-based repositioning (TransformControls)
+- Placement tools (C for comment, D for distance)
+- Hover detection (pointer cursor on markers)
+- Point cloud visualization mode (markers hidden during transforms)
+
+---
+
 ## Code Review Summary (January 27, 2026)
 
 Comprehensive 4-engineer code review (Senior, Security, Performance, Architect) of the full codebase:
