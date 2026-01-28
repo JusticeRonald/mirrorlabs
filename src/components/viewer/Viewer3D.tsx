@@ -6,7 +6,8 @@ import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
-import { CURSOR_TARGET, CURSOR_GIZMO_DRAG } from '@/lib/viewer/cursors';
+import { MagnifierUpdater } from '@/lib/viewer/MagnifierUpdater';
+import { CURSOR_TARGET, CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
 import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
@@ -53,6 +54,8 @@ interface Viewer3DProps {
   selectedMeasurementPoint?: SelectedMeasurementPoint | null;
   /** Callback when a measurement point is moved via gizmo */
   onMeasurementPointMove?: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
+  /** Callback to deselect the currently selected measurement point */
+  onMeasurementPointDeselect?: () => void;
   /** Callback when annotation is moved (click-to-relocate or gizmo) */
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
   /** Callback to expose the CameraAnimator to parent for saved views fly-to */
@@ -63,6 +66,10 @@ interface Viewer3DProps {
   onRendererReady?: (renderer: THREE.WebGLRenderer) => void;
   /** Callback to expose the OrbitControls to parent */
   onControlsReady?: (controls: OrbitControls) => void;
+  /** Canvas element for the magnifier loupe (receives cropped WebGL content) */
+  magnifierCanvas?: HTMLCanvasElement | null;
+  /** Callback for mouse position updates (for magnifier loupe positioning) */
+  onMousePositionUpdate?: (x: number, y: number, visible: boolean) => void;
 }
 
 const Viewer3D = ({
@@ -94,11 +101,14 @@ const Viewer3D = ({
   measurements,
   selectedMeasurementPoint,
   onMeasurementPointMove,
+  onMeasurementPointDeselect,
   onAnnotationMove,
   onCameraAnimatorReady,
   onCameraQuaternionUpdate,
   onRendererReady,
   onControlsReady,
+  magnifierCanvas,
+  onMousePositionUpdate,
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -125,6 +135,8 @@ const Viewer3D = ({
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   // Track whether the transform gizmo is being dragged (for cursor feedback)
   const gizmoDraggingRef = useRef(false);
+  // Magnifier loupe updater (canvas crop logic in render loop)
+  const magnifierUpdaterRef = useRef<MagnifierUpdater | null>(null);
 
   // Store callbacks and values in refs to avoid effect re-runs when parent re-renders
   const onSplatLoadStartRef = useRef(onSplatLoadStart);
@@ -141,11 +153,13 @@ const Viewer3D = ({
   const onPointSelectRef = useRef(onPointSelect);
   const onCameraReadyRef = useRef(onCameraReady);
   const onMeasurementPointMoveRef = useRef(onMeasurementPointMove);
+  const onMeasurementPointDeselectRef = useRef(onMeasurementPointDeselect);
   const onAnnotationMoveRef = useRef(onAnnotationMove);
   const onCameraAnimatorReadyRef = useRef(onCameraAnimatorReady);
   const onCameraQuaternionUpdateRef = useRef(onCameraQuaternionUpdate);
   const onRendererReadyRef = useRef(onRendererReady);
   const onControlsReadyRef = useRef(onControlsReady);
+  const onMousePositionUpdateRef = useRef(onMousePositionUpdate);
 
   // Keep callback refs updated
   // Intentionally no deps - refs should always have latest callback values to avoid stale closures
@@ -164,11 +178,13 @@ const Viewer3D = ({
     onPointSelectRef.current = onPointSelect;
     onCameraReadyRef.current = onCameraReady;
     onMeasurementPointMoveRef.current = onMeasurementPointMove;
+    onMeasurementPointDeselectRef.current = onMeasurementPointDeselect;
     onAnnotationMoveRef.current = onAnnotationMove;
     onCameraAnimatorReadyRef.current = onCameraAnimatorReady;
     onCameraQuaternionUpdateRef.current = onCameraQuaternionUpdate;
     onRendererReadyRef.current = onRendererReady;
     onControlsReadyRef.current = onControlsReady;
+    onMousePositionUpdateRef.current = onMousePositionUpdate;
   });
 
   // Track pointer position on mousedown for drag detection
@@ -230,6 +246,7 @@ const Viewer3D = ({
         if (annotationHelperRef.current) {
           annotationHelperRef.current.position.copy(newPos);
         }
+        onAnnotationSelectRef.current?.(null);
         return;
       }
     }
@@ -256,6 +273,7 @@ const Viewer3D = ({
         if (measurementPointHelperRef.current) {
           measurementPointHelperRef.current.position.copy(newPos);
         }
+        onMeasurementPointDeselectRef.current?.();
         return; // Don't create new measurements while editing a point
       }
     }
@@ -284,6 +302,13 @@ const Viewer3D = ({
     if (!containerRef.current || !cameraRef.current || !sceneManagerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
+
+    // Update magnifier position
+    const mx = event.clientX - rect.left;
+    const my = event.clientY - rect.top;
+    magnifierUpdaterRef.current?.setMousePosition(mx, my);
+    const magnifierVisible = magnifierUpdaterRef.current?.enabled ?? false;
+    onMousePositionUpdateRef.current?.(mx, my, magnifierVisible);
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
       -((event.clientY - rect.top) / rect.height) * 2 + 1
@@ -315,8 +340,8 @@ const Viewer3D = ({
         // Show target cursor when annotation is selected (click-to-relocate mode)
         containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (isPlacementTool) {
-        // Keep crosshair cursor when a placement tool is active (don't override on hover)
-        containerRef.current.style.cursor = 'crosshair';
+        // Keep placement cursor when a placement tool is active (don't override on hover)
+        containerRef.current.style.cursor = CURSOR_PLACEMENT;
       } else if (annotationId) {
         // Show pointer when hovering over an annotation (only when no tool active)
         containerRef.current.style.cursor = 'pointer';
@@ -483,6 +508,10 @@ const Viewer3D = ({
     const cameraAnimator = new CameraAnimator(camera, controls);
     cameraAnimatorRef.current = cameraAnimator;
     onCameraAnimatorReadyRef.current?.(cameraAnimator);
+
+    // Magnifier Updater (canvas crop for loupe)
+    const magnifierUpdater = new MagnifierUpdater();
+    magnifierUpdaterRef.current = magnifierUpdater;
 
     // Disable OrbitControls while dragging the gizmo
     transformControls.addEventListener('dragging-changed', (event: { value: boolean }) => {
@@ -655,6 +684,9 @@ const Viewer3D = ({
 
       renderer.render(scene, camera);
 
+      // Update magnifier loupe (must be in same rAF as render for drawImage to work)
+      magnifierUpdaterRef.current?.update(renderer.domElement);
+
       // Notify parent of camera quaternion for axis navigator
       onCameraQuaternionUpdateRef.current?.(camera.quaternion);
     };
@@ -682,12 +714,19 @@ const Viewer3D = ({
     // Mousemove handler for annotation hover detection and measurement point dragging
     renderer.domElement.addEventListener('mousemove', handleMouseMove);
 
+    // Pointerleave handler to hide magnifier when mouse exits canvas
+    const handlePointerLeave = () => {
+      onMousePositionUpdateRef.current?.(0, 0, false);
+    };
+    renderer.domElement.addEventListener('pointerleave', handlePointerLeave);
+
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('pointerleave', handlePointerLeave);
       window.removeEventListener('keyup', handleKeyUp);
       renderer.domElement.removeEventListener('click', handleClick);
       cancelAnimationFrame(animationFrameId);
@@ -702,6 +741,7 @@ const Viewer3D = ({
       rotationFeedbackRef.current = null;
       transformControlsRef.current = null;
       cameraAnimatorRef.current = null;
+      magnifierUpdaterRef.current = null;
       if (containerRef.current && renderer.domElement) {
         containerRef.current.removeChild(renderer.domElement);
       }
@@ -1081,12 +1121,25 @@ const Viewer3D = ({
         // Show target cursor when annotation is selected (can be dragged)
         containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (isPlacementTool) {
-        containerRef.current.style.cursor = 'crosshair';
+        containerRef.current.style.cursor = CURSOR_PLACEMENT;
       } else {
         containerRef.current.style.cursor = 'default';
       }
     }
   }, [activeTool, selectedMeasurementPoint, selectedAnnotationId]);
+
+  // Sync magnifier enabled state with active tool / editing state
+  useEffect(() => {
+    const placementTools = ['comment', 'pin', 'distance', 'area', 'angle'];
+    const isPlacement = activeTool != null && placementTools.includes(activeTool);
+    const isReposition = !!selectedAnnotationId || !!selectedMeasurementPoint;
+    magnifierUpdaterRef.current?.setEnabled(isPlacement || isReposition);
+  }, [activeTool, selectedAnnotationId, selectedMeasurementPoint]);
+
+  // Sync magnifier canvas prop
+  useEffect(() => {
+    magnifierUpdaterRef.current?.setCanvas(magnifierCanvas ?? null);
+  }, [magnifierCanvas]);
 
   return (
     <div

@@ -14,6 +14,7 @@ import AnnotationModal from '@/components/viewer/AnnotationModal';
 import { AnnotationIconOverlay } from '@/components/viewer/AnnotationMarker';
 import { MeasurementIconOverlay, type MeasurementPointData } from '@/components/viewer/MeasurementMarker';
 import { AxisNavigator, type ViewDirection } from '@/components/viewer/AxisNavigator';
+import { MagnifierLoupe } from '@/components/viewer/MagnifierLoupe';
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
 import { getProjectById as getMockProjectById, getScanById as getMockScanById } from '@/data/mockProjects';
 import { getProjectById as getSupabaseProject } from '@/lib/supabase/services/projects';
@@ -182,6 +183,10 @@ const ViewerContent = () => {
   const [isSaveViewDialogOpen, setIsSaveViewDialogOpen] = useState(false);
   const [pendingCameraState, setPendingCameraState] = useState<CameraState | null>(null);
   const cameraAnimatorRef = useRef<CameraAnimator | null>(null);
+
+  // Magnifier loupe state
+  const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0, visible: false });
+  const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Real-time annotation subscription
   const { isConnected: isRealtimeConnected } = useAnnotationSubscription({
@@ -1115,6 +1120,7 @@ const ViewerContent = () => {
           onMeasurementPointMove={(measurementId, pointIndex, newPosition) => {
             updateMeasurementPoint(measurementId, pointIndex, newPosition);
           }}
+          onMeasurementPointDeselect={clearMeasurementPointSelection}
           onAnnotationMove={handleAnnotationMove}
           onSplatLoadStart={() => {
             setIsLoading(true);
@@ -1132,6 +1138,8 @@ const ViewerContent = () => {
           }}
           onRendererReady={setRenderer}
           onControlsReady={setControls}
+          magnifierCanvas={magnifierCanvasRef.current}
+          onMousePositionUpdate={(x, y, visible) => setMagnifierPos({ x, y, visible })}
         />
 
         {/* HTML Annotation Icon Overlay */}
@@ -1204,6 +1212,14 @@ const ViewerContent = () => {
             sceneManagerRef.current?.getMeasurementPointWorldPosition(measurementId, pointIndex) ?? null
           }
         />}
+
+        {/* Magnifier Loupe for precise point placement */}
+        <MagnifierLoupe
+          ref={magnifierCanvasRef}
+          visible={magnifierPos.visible}
+          mouseX={magnifierPos.x}
+          mouseY={magnifierPos.y}
+        />
       </div>
 
       {/* Loading Overlay */}
