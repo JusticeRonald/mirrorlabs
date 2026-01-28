@@ -116,6 +116,7 @@ export type AnnotationType = 'pin' | 'comment' | 'markup';
 export type AnnotationStatus = 'open' | 'in_progress' | 'resolved' | 'reopened' | 'archived';
 export type MarkupToolType = 'freehand' | 'circle' | 'rectangle' | 'arrow' | 'cloud' | 'text' | null;
 export type ViewMode = 'solid' | 'wireframe' | 'points';
+export type SplatViewMode = 'model' | 'pointcloud';
 export type CollaborationTab = 'annotations' | 'measurements' | 'views';
 
 /**
@@ -277,6 +278,9 @@ export interface ViewerState {
   splatLoadError: SplatLoadError | null;
   splatMetadata: SplatSceneMetadata | null;
 
+  // Splat visualization mode
+  splatViewMode: SplatViewMode;
+
   // Clean view mode (H key toggle)
   isCleanViewMode: boolean;
   cleanViewPreviousState: {
@@ -344,6 +348,9 @@ export const defaultViewerState: ViewerState = {
   splatLoadProgress: null,
   splatLoadError: null,
   splatMetadata: null,
+
+  // Splat visualization mode
+  splatViewMode: 'model',
 
   // Clean view mode
   isCleanViewMode: false,

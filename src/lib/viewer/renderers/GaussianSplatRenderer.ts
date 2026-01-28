@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SplatOrientation, SplatTransform } from '@/types/viewer';
+import type { SplatOrientation, SplatTransform, SplatViewMode } from '@/types/viewer';
 
 /**
  * Metadata about a loaded splat scene
@@ -107,6 +107,12 @@ export interface GaussianSplatRenderer {
    * @returns Current transform or null if no mesh loaded
    */
   getTransform(): SplatTransform | null;
+
+  /**
+   * Set the splat visualization mode (solid, centers, rings)
+   * @param mode The visualization mode to apply
+   */
+  setSplatViewMode(mode: SplatViewMode): void;
 }
 
 /**

@@ -9,12 +9,14 @@ import {
   Rotate3D,
   RotateCcw,
   Save,
+  CircleDot,
 } from 'lucide-react';
 import LayersPopover from '@/components/viewer/LayersPopover';
-import type { TransformMode } from '@/types/viewer';
+import type { TransformMode, SplatViewMode } from '@/types/viewer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { RolePermissions } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,6 +44,9 @@ interface ViewerToolbarProps {
   onToggleAnnotations: () => void;
   showMeasurements: boolean;
   onToggleMeasurements: () => void;
+  // Splat visualization mode
+  splatViewMode?: SplatViewMode;
+  onSplatViewModeChange?: (mode: SplatViewMode) => void;
 }
 
 interface ToolButtonProps {
@@ -117,6 +122,8 @@ const ViewerToolbar = ({
   onToggleAnnotations,
   showMeasurements,
   onToggleMeasurements,
+  splatViewMode = 'model',
+  onSplatViewModeChange,
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -276,6 +283,50 @@ const ViewerToolbar = ({
             shortcut="W"
             onClick={() => onViewModeChange(viewMode === 'wireframe' ? 'solid' : 'wireframe')}
           />
+          {onSplatViewModeChange && (
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-9 w-9 transition-all',
+                        splatViewMode !== 'model' && 'bg-primary/20 text-primary border border-primary/30'
+                      )}
+                    >
+                      <CircleDot className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">Splat Mode</TooltipContent>
+              </Tooltip>
+              <PopoverContent side="top" align="center" className="w-44 p-1">
+                {([
+                  { value: 'model' as const, label: '3D Model' },
+                  { value: 'pointcloud' as const, label: 'Point Cloud' },
+                ]).map((mode) => (
+                  <button
+                    key={mode.value}
+                    onClick={() => onSplatViewModeChange(mode.value)}
+                    className={cn(
+                      'flex items-center justify-between w-full px-3 py-2 rounded-md text-sm transition-colors',
+                      'hover:bg-muted/50',
+                      splatViewMode === mode.value
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'text-foreground'
+                    )}
+                  >
+                    <span>{mode.label}</span>
+                    {splatViewMode === mode.value && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    )}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+          )}
           <LayersPopover
             showAnnotations={showAnnotations}
             showMeasurements={showMeasurements}

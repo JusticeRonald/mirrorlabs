@@ -5,7 +5,7 @@ import type {
   SplatMetadata,
   SplatLoadProgress,
 } from './renderers';
-import type { SplatOrientation, SplatTransform, MeasurementUnit } from '@/types/viewer';
+import type { SplatOrientation, SplatTransform, SplatViewMode, MeasurementUnit } from '@/types/viewer';
 import { AnnotationRenderer, type AnnotationData, type AnnotationStatus } from './AnnotationRenderer';
 import { MeasurementRenderer, type MeasurementData } from './MeasurementRenderer';
 import { SplatPickingSystem, type PickResult } from './SplatPickingSystem';
@@ -224,6 +224,13 @@ export class SceneManager {
    */
   getSplatMesh(): THREE.Object3D | null {
     return this.splatRenderer?.getMesh() ?? null;
+  }
+
+  /**
+   * Set the splat visualization mode (solid, centers, rings)
+   */
+  setSplatViewMode(mode: SplatViewMode): void {
+    this.splatRenderer?.setSplatViewMode(mode);
   }
 
   /**

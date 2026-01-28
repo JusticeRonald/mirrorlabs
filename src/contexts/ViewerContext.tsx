@@ -5,6 +5,7 @@ import {
   Measurement,
   Annotation,
   ViewMode,
+  SplatViewMode,
   SavedView,
   CameraState,
   defaultViewerState,
@@ -29,6 +30,7 @@ interface ViewerContextType {
   // Actions
   setActiveTool: (tool: string | null) => void;
   setViewMode: (mode: ViewMode) => void;
+  setSplatViewMode: (mode: SplatViewMode) => void;
   toggleGrid: () => void;
   toggleMeasurements: () => void;
   toggleAnnotations: () => void;
@@ -126,6 +128,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
   const setViewMode = useCallback((mode: ViewMode) => {
     setState(prev => ({ ...prev, viewMode: mode }));
+  }, []);
+
+  const setSplatViewMode = useCallback((mode: SplatViewMode) => {
+    setState(prev => ({ ...prev, splatViewMode: mode }));
   }, []);
 
   const toggleGrid = useCallback(() => {
@@ -619,6 +625,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     userRole,
     setActiveTool,
     setViewMode,
+    setSplatViewMode,
     toggleGrid,
     toggleMeasurements,
     toggleAnnotations,

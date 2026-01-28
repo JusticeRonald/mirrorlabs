@@ -10,7 +10,8 @@ import type {
   SplatLoadProgress,
   SplatLoadOptions
 } from './GaussianSplatRenderer';
-import { DEFAULT_SPLAT_ORIENTATION, DEFAULT_SPLAT_TRANSFORM, type SplatOrientation, type SplatTransform } from '@/types/viewer';
+import { DEFAULT_SPLAT_ORIENTATION, DEFAULT_SPLAT_TRANSFORM, type SplatOrientation, type SplatTransform, type SplatViewMode } from '@/types/viewer';
+import { SplatVisualizationOverlay } from '@/lib/viewer/SplatVisualizationOverlay';
 
 /**
  * Spark-based implementation of GaussianSplatRenderer.
@@ -23,6 +24,8 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
   private splatMesh: SplatMesh | null = null;
   private metadata: SplatMetadata | null = null;
   private clock: THREE.Clock;
+  private currentViewMode: SplatViewMode = 'model';
+  private overlay: SplatVisualizationOverlay | null = null;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
     this.renderer = renderer;
@@ -247,7 +250,40 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
     };
   }
 
+  setSplatViewMode(mode: SplatViewMode): void {
+    if (!this.splatMesh || mode === this.currentViewMode) return;
+
+    this.currentViewMode = mode;
+
+    // Lazy-init the overlay
+    if (!this.overlay) {
+      this.overlay = new SplatVisualizationOverlay(this.scene);
+    }
+
+    switch (mode) {
+      case 'model':
+        // Restore original splat rendering, hide all overlays
+        this.splatMesh.visible = true;
+        this.overlay.hideCenters();
+        break;
+
+      case 'pointcloud':
+        // Hide splat rendering, show point-cloud overlay
+        this.splatMesh.visible = false;
+        if (!this.overlay.isCentersBuilt) {
+          this.overlay.buildCenters(this.splatMesh);
+        }
+        this.overlay.showCenters();
+        break;
+    }
+  }
+
   dispose(): void {
+    if (this.overlay) {
+      this.overlay.dispose();
+      this.overlay = null;
+    }
+
     if (this.splatMesh) {
       this.scene.remove(this.splatMesh);
       this.splatMesh.dispose();

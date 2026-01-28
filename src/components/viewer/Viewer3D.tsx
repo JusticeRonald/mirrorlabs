@@ -8,7 +8,7 @@ import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import { MagnifierUpdater } from '@/lib/viewer/MagnifierUpdater';
 import { CURSOR_TARGET, CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
-import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint } from '@/types/viewer';
+import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint, SplatViewMode } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
 interface Viewer3DProps {
@@ -70,6 +70,8 @@ interface Viewer3DProps {
   magnifierCanvas?: HTMLCanvasElement | null;
   /** Callback for mouse position updates (for magnifier loupe positioning) */
   onMousePositionUpdate?: (x: number, y: number, visible: boolean) => void;
+  /** Splat visualization mode (model/pointcloud) */
+  splatViewMode?: SplatViewMode;
 }
 
 const Viewer3D = ({
@@ -109,6 +111,7 @@ const Viewer3D = ({
   onControlsReady,
   magnifierCanvas,
   onMousePositionUpdate,
+  splatViewMode = 'model',
 }: Viewer3DProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -384,6 +387,11 @@ const Viewer3D = ({
       zAxisLineRef.current.visible = showGrid;
     }
   }, [showGrid]);
+
+  // Update splat visualization mode (model/pointcloud)
+  useEffect(() => {
+    sceneManagerRef.current?.setSplatViewMode(splatViewMode);
+  }, [splatViewMode]);
 
   // Fit camera to bounding box
   const fitCameraToBounds = useCallback((boundingBox: THREE.Box3) => {

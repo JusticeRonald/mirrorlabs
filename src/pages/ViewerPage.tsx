@@ -131,6 +131,7 @@ const ViewerContent = () => {
     toggleAnnotations,
     toggleMeasurements,
     toggleCleanView,
+    setSplatViewMode,
     openCollaborationPanel,
     closeCollaborationPanel,
     setActiveCollaborationTab,
@@ -1140,6 +1141,7 @@ const ViewerContent = () => {
           onControlsReady={setControls}
           magnifierCanvas={magnifierCanvasRef.current}
           onMousePositionUpdate={(x, y, visible) => setMagnifierPos({ x, y, visible })}
+          splatViewMode={state.splatViewMode}
         />
 
         {/* HTML Annotation Icon Overlay */}
@@ -1319,6 +1321,8 @@ const ViewerContent = () => {
         onToggleAnnotations={toggleAnnotations}
         showMeasurements={state.showMeasurements}
         onToggleMeasurements={toggleMeasurements}
+        splatViewMode={state.splatViewMode}
+        onSplatViewModeChange={setSplatViewMode}
       />
 
       {/* Share Panel */}
