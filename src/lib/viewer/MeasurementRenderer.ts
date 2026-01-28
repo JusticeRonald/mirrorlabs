@@ -183,6 +183,71 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Apply a world-space transform to all measurement positions.
+   * Used when the parent mesh was transformed while measurements were scene-parented.
+   * Call BEFORE setParentObject() when switching back from point cloud mode.
+   *
+   * @param deltaMatrix The transform delta to apply (currentMeshMatrix × storedMeshMatrix⁻¹)
+   */
+  applyWorldTransform(deltaMatrix: THREE.Matrix4): void {
+    // Only apply if currently parented to scene (world coords)
+    if (this.parentObject !== this.scene) return;
+
+    this.measurements.forEach((group) => {
+      const data = group.userData.data as MeasurementData;
+      if (data?.points) {
+        // Transform stored world-space points by the delta
+        data.points = data.points.map(p => p.clone().applyMatrix4(deltaMatrix));
+
+        // Rebuild geometry with updated points
+        if (data.type === 'distance' && data.points.length === 2) {
+          const p1 = data.points[0];
+          const p2 = data.points[1];
+          group.traverse((child) => {
+            if (child instanceof Line2) {
+              const geometry = child.geometry as LineGeometry;
+              geometry.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]);
+              child.computeLineDistances();
+            }
+          });
+          // Update label position
+          const label = this.labels.get(data.id);
+          if (label) {
+            const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
+            label.position.copy(midpoint);
+            label.position.y += this.config.labelOffset;
+          }
+        } else if (data.type === 'area' && data.points.length >= 3) {
+          const outlinePoints = [...data.points, data.points[0]];
+          const positions: number[] = [];
+          outlinePoints.forEach(p => positions.push(p.x, p.y, p.z));
+          group.traverse((child) => {
+            if (child instanceof Line2) {
+              const geometry = child.geometry as LineGeometry;
+              geometry.setPositions(positions);
+              child.computeLineDistances();
+            }
+            if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+              const newFillGeometry = this.createPolygonGeometry(data.points);
+              if (newFillGeometry) {
+                child.geometry.dispose();
+                child.geometry = newFillGeometry;
+              }
+            }
+          });
+          // Update label position
+          const label = this.labels.get(data.id);
+          if (label) {
+            const centroid = MeasurementCalculator.calculateCentroid(data.points);
+            label.position.copy(centroid);
+            label.position.y += this.config.labelOffset;
+          }
+        }
+      }
+    });
+  }
+
+  /**
    * Get measurement point in world space (for HTML overlay)
    */
   getPointWorldPosition(id: string, pointIndex: number): THREE.Vector3 | null {

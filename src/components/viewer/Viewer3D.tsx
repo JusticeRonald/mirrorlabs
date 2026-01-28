@@ -7,7 +7,7 @@ import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import { MagnifierUpdater } from '@/lib/viewer/MagnifierUpdater';
-import { CURSOR_TARGET, CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
+import { CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
 import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint, SplatViewMode } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
@@ -56,7 +56,7 @@ interface Viewer3DProps {
   onMeasurementPointMove?: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
   /** Callback to deselect the currently selected measurement point */
   onMeasurementPointDeselect?: () => void;
-  /** Callback when annotation is moved (click-to-relocate or gizmo) */
+  /** Callback when annotation is moved via gizmo */
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
   /** Callback to expose the CameraAnimator to parent for saved views fly-to */
   onCameraAnimatorReady?: (animator: CameraAnimator) => void;
@@ -195,18 +195,6 @@ const Viewer3D = ({
     pointerDownRef.current = { x: event.clientX, y: event.clientY };
   }, []);
 
-  // Track selected measurement point for click-to-move
-  const selectedMeasurementPointRef = useRef(selectedMeasurementPoint);
-  useEffect(() => {
-    selectedMeasurementPointRef.current = selectedMeasurementPoint;
-  }, [selectedMeasurementPoint]);
-
-  // Track selected annotation for click-to-relocate
-  const selectedAnnotationIdRef = useRef(selectedAnnotationId);
-  useEffect(() => {
-    selectedAnnotationIdRef.current = selectedAnnotationId;
-  }, [selectedAnnotationId]);
-
   // Handle point selection via raycasting
   const handleClick = useCallback((event: MouseEvent) => {
     if (!containerRef.current || !cameraRef.current || !sceneManagerRef.current) return;
@@ -238,49 +226,6 @@ const Viewer3D = ({
       return;
     }
 
-    // If an annotation is selected, click-to-relocate behavior
-    const editingAnnotation = selectedAnnotationIdRef.current;
-    if (editingAnnotation) {
-      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
-      if (pickResult) {
-        const newPos = pickResult.position.clone();
-        onAnnotationMoveRef.current?.(editingAnnotation, newPos);
-        sceneManagerRef.current.updateAnnotationPosition(editingAnnotation, newPos);
-        if (annotationHelperRef.current) {
-          annotationHelperRef.current.position.copy(newPos);
-        }
-        onAnnotationSelectRef.current?.(null);
-        return;
-      }
-    }
-
-    // If a measurement point is selected (editing mode), click-to-move behavior
-    const editingPoint = selectedMeasurementPointRef.current;
-    if (editingPoint) {
-      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
-      if (pickResult) {
-        const newPos = pickResult.position.clone();
-        // Move the selected point to the clicked position
-        onMeasurementPointMoveRef.current?.(
-          editingPoint.measurementId,
-          editingPoint.pointIndex,
-          newPos
-        );
-        // Update 3D line geometry in the scene
-        sceneManagerRef.current.updateMeasurementPoint(
-          editingPoint.measurementId,
-          editingPoint.pointIndex,
-          newPos
-        );
-        // Update gizmo helper position so the 3D gizmo follows
-        if (measurementPointHelperRef.current) {
-          measurementPointHelperRef.current.position.copy(newPos);
-        }
-        onMeasurementPointDeselectRef.current?.();
-        return; // Don't create new measurements while editing a point
-      }
-    }
-
     // If using a measurement/annotation tool, pick splat surface
     const currentTool = activeToolRef.current;
     const pointSelectCallback = onPointSelectRef.current;
@@ -310,7 +255,10 @@ const Viewer3D = ({
     const mx = event.clientX - rect.left;
     const my = event.clientY - rect.top;
     magnifierUpdaterRef.current?.setMousePosition(mx, my);
-    const magnifierVisible = magnifierUpdaterRef.current?.enabled ?? false;
+    // Hide magnifier during gizmo drag OR hover to avoid visual clutter
+    const gizmoHovered = transformControlsRef.current?.axis != null;
+    const gizmoActive = gizmoDraggingRef.current || gizmoHovered;
+    const magnifierVisible = (magnifierUpdaterRef.current?.enabled ?? false) && !gizmoActive;
     onMousePositionUpdateRef.current?.(mx, my, magnifierVisible);
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -321,12 +269,11 @@ const Viewer3D = ({
     const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
     onAnnotationHoverRef.current?.(annotationId);
 
-    // Update cursor style based on: gizmo drag > gizmo hover > editing point > selected annotation > active tool > hover state > default
-    // Priority: Gizmo dragging > Gizmo hovered > Selected measurement point > Selected annotation > Placement tool > Hover > Default
+    // Update cursor style based on: gizmo drag > gizmo hover > active tool > hover state > default
+    // Priority: Gizmo dragging > Gizmo hovered > Placement tool > Hover > Default
     if (containerRef.current) {
       const currentTool = activeToolRef.current;
       const isPlacementTool = currentTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(currentTool);
-      const editingPoint = selectedMeasurementPointRef.current;
       const gizmoHovered = transformControlsRef.current?.axis != null;
       const gizmoDragging = gizmoDraggingRef.current;
 
@@ -334,14 +281,8 @@ const Viewer3D = ({
         // Show move-arrows cursor when dragging gizmo axis
         containerRef.current.style.cursor = CURSOR_GIZMO_DRAG;
       } else if (gizmoHovered) {
-        // Show default cursor when hovering gizmo axis (not CURSOR_TARGET)
+        // Show default cursor when hovering gizmo axis
         containerRef.current.style.cursor = 'default';
-      } else if (editingPoint) {
-        // Show target cursor when a measurement point is selected (click-to-move mode)
-        containerRef.current.style.cursor = CURSOR_TARGET;
-      } else if (selectedAnnotationIdRef.current) {
-        // Show target cursor when annotation is selected (click-to-relocate mode)
-        containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (isPlacementTool) {
         // Keep placement cursor when a placement tool is active (don't override on hover)
         containerRef.current.style.cursor = CURSOR_PLACEMENT;
@@ -688,6 +629,7 @@ const Viewer3D = ({
       // Update splat renderer if active
       if (sceneManager.hasSplatLoaded()) {
         sceneManager.updateSplat(camera, deltaTime);
+        sceneManager.syncOverlay();
       }
 
       renderer.render(scene, camera);
@@ -1118,31 +1060,25 @@ const Viewer3D = ({
 
   // Note: 3D annotation marker sync removed - now using HTML overlay via AnnotationIconOverlay
 
-  // Update cursor immediately when tool or editing state changes
+  // Update cursor immediately when tool changes
   useEffect(() => {
     if (containerRef.current) {
       const isPlacementTool = activeTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(activeTool);
-      if (selectedMeasurementPoint) {
-        // Show target cursor when a measurement point is selected (click-to-move mode)
-        containerRef.current.style.cursor = CURSOR_TARGET;
-      } else if (selectedAnnotationId) {
-        // Show target cursor when annotation is selected (can be dragged)
-        containerRef.current.style.cursor = CURSOR_TARGET;
-      } else if (isPlacementTool) {
+      if (isPlacementTool) {
         containerRef.current.style.cursor = CURSOR_PLACEMENT;
       } else {
         containerRef.current.style.cursor = 'default';
       }
     }
-  }, [activeTool, selectedMeasurementPoint, selectedAnnotationId]);
+  }, [activeTool]);
 
-  // Sync magnifier enabled state with active tool / editing state
+  // Sync magnifier enabled state with active tool (placement only, not repositioning)
+  // Repositioning uses transform gizmo instead, so magnifier is not needed
   useEffect(() => {
     const placementTools = ['comment', 'pin', 'distance', 'area', 'angle'];
     const isPlacement = activeTool != null && placementTools.includes(activeTool);
-    const isReposition = !!selectedAnnotationId || !!selectedMeasurementPoint;
-    magnifierUpdaterRef.current?.setEnabled(isPlacement || isReposition);
-  }, [activeTool, selectedAnnotationId, selectedMeasurementPoint]);
+    magnifierUpdaterRef.current?.setEnabled(isPlacement);
+  }, [activeTool]);
 
   // Sync magnifier canvas prop
   useEffect(() => {

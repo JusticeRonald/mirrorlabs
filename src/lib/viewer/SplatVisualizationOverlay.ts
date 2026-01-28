@@ -29,6 +29,7 @@ const MIN_OPACITY_THRESHOLD = 0.15;
 export class SplatVisualizationOverlay {
   private scene: THREE.Scene;
   private pointsCloud: THREE.Points | null = null;
+  private sourceMesh: THREE.Object3D | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -96,9 +97,11 @@ export class SplatVisualizationOverlay {
     this.pointsCloud = new THREE.Points(geometry, material);
     this.pointsCloud.frustumCulled = false;
 
-    // Copy the splatMesh world transform so positions match
-    splatMesh.updateWorldMatrix(true, false);
-    this.pointsCloud.applyMatrix4(splatMesh.matrixWorld);
+    // Sync the point cloud transform with the splat mesh (don't bake into vertices)
+    this.pointsCloud.position.copy(splatMesh.position);
+    this.pointsCloud.quaternion.copy(splatMesh.quaternion);
+    this.pointsCloud.scale.copy(splatMesh.scale);
+    this.sourceMesh = splatMesh;
 
     this.scene.add(this.pointsCloud);
 
@@ -115,6 +118,18 @@ export class SplatVisualizationOverlay {
   hideCenters(): void {
     if (this.pointsCloud) {
       this.pointsCloud.visible = false;
+    }
+  }
+
+  /**
+   * Sync the point cloud transform with the source splat mesh.
+   * Call this every frame to keep the point cloud aligned after gizmo transforms.
+   */
+  syncTransform(): void {
+    if (this.pointsCloud && this.sourceMesh) {
+      this.pointsCloud.position.copy(this.sourceMesh.position);
+      this.pointsCloud.quaternion.copy(this.sourceMesh.quaternion);
+      this.pointsCloud.scale.copy(this.sourceMesh.scale);
     }
   }
 
@@ -145,6 +160,7 @@ export class SplatVisualizationOverlay {
       (this.pointsCloud.material as THREE.Material).dispose();
       this.pointsCloud = null;
     }
+    this.sourceMesh = null;
   }
 
   /**

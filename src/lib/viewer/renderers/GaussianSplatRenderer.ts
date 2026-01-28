@@ -113,6 +113,12 @@ export interface GaussianSplatRenderer {
    * @param mode The visualization mode to apply
    */
   setSplatViewMode(mode: SplatViewMode): void;
+
+  /**
+   * Sync the overlay (point cloud) transform with the splat mesh.
+   * Call every frame to keep overlays aligned during gizmo transforms.
+   */
+  updateOverlay?(): void;
 }
 
 /**

@@ -198,6 +198,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       measurements: prev.measurements.filter(m => m.id !== id),
+      // Clear selection if the deleted measurement was selected
+      selectedMeasurementId: prev.selectedMeasurementId === id ? null : prev.selectedMeasurementId,
+      selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === id ? null : prev.selectedMeasurementPoint,
     }));
   }, []);
 

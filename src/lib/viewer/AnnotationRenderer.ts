@@ -143,6 +143,23 @@ export class AnnotationRenderer {
   }
 
   /**
+   * Apply a world-space transform to all annotation positions.
+   * Used when the parent mesh was transformed while annotations were scene-parented.
+   * Call BEFORE setParentObject() when switching back from point cloud mode.
+   *
+   * @param deltaMatrix The transform delta to apply (currentMeshMatrix × storedMeshMatrix⁻¹)
+   */
+  applyWorldTransform(deltaMatrix: THREE.Matrix4): void {
+    // Only apply if currently parented to scene (world coords)
+    if (this.parentObject !== this.scene) return;
+
+    this.markers.forEach((marker) => {
+      // marker.position is in world coords when parented to scene
+      marker.position.applyMatrix4(deltaMatrix);
+    });
+  }
+
+  /**
    * Get annotation marker position in world space (for HTML overlay)
    */
   getMarkerWorldPosition(id: string): THREE.Vector3 | null {
@@ -396,6 +413,15 @@ export class AnnotationRenderer {
       } else {
         this.applyState(marker, 'default');
       }
+    });
+  }
+
+  /**
+   * Show or hide all annotation markers
+   */
+  setVisible(visible: boolean): void {
+    this.markers.forEach((marker) => {
+      marker.visible = visible;
     });
   }
 

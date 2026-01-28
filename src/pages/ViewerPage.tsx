@@ -1016,6 +1016,9 @@ const ViewerContent = () => {
 
   // Handle annotation deletion with Supabase persistence
   const handleAnnotationDelete = useCallback(async (annotationId: string) => {
+    // Clear selection so gizmo disappears immediately
+    selectAnnotation(null);
+
     // Remove from local state immediately
     removeAnnotation(annotationId);
 
@@ -1027,11 +1030,14 @@ const ViewerContent = () => {
         // Error deleting annotation - already removed locally
       }
     }
-  }, [removeAnnotation]);
+  }, [removeAnnotation, selectAnnotation]);
   handleAnnotationDeleteRef.current = handleAnnotationDelete;
 
   // Handle measurement deletion with Supabase persistence
   const handleMeasurementDelete = useCallback(async (measurementId: string) => {
+    // Clear selection so gizmo disappears immediately
+    clearMeasurementPointSelection();
+
     // Remove from local state immediately
     removeMeasurement(measurementId);
 
@@ -1043,7 +1049,7 @@ const ViewerContent = () => {
         // Error deleting measurement - already removed locally
       }
     }
-  }, [removeMeasurement]);
+  }, [removeMeasurement, clearMeasurementPointSelection]);
   handleMeasurementDeleteRef.current = handleMeasurementDelete;
 
   // Handle annotation reply with Supabase persistence
@@ -1144,8 +1150,8 @@ const ViewerContent = () => {
           splatViewMode={state.splatViewMode}
         />
 
-        {/* HTML Annotation Icon Overlay */}
-        {state.showAnnotations && <AnnotationIconOverlay
+        {/* HTML Annotation Icon Overlay - hidden in point cloud mode */}
+        {state.showAnnotations && state.splatViewMode !== 'pointcloud' && <AnnotationIconOverlay
           annotations={state.annotations.map(a => {
             // Use fallback position for initial render, getWorldPosition provides live updates
             const position = a.position instanceof THREE.Vector3
@@ -1177,8 +1183,8 @@ const ViewerContent = () => {
           getWorldPosition={(id) => sceneManagerRef.current?.getAnnotationWorldPosition(id) ?? null}
         />}
 
-        {/* HTML Measurement Point Overlay */}
-        {state.showMeasurements && <MeasurementIconOverlay
+        {/* HTML Measurement Point Overlay - hidden in point cloud mode */}
+        {state.showMeasurements && state.splatViewMode !== 'pointcloud' && <MeasurementIconOverlay
           points={state.measurements.flatMap(m =>
             m.points.map((p, i) => {
               // Use fallback position for initial render, getWorldPosition provides live updates

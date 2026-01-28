@@ -30,6 +30,11 @@ export class SceneManager {
   private pickingSystem: SplatPickingSystem | null = null;
   private raycaster: THREE.Raycaster;
 
+  // Track mesh transform state for view mode switching
+  // When switching to point cloud mode, we store the mesh's world matrix.
+  // When switching back, we calculate the delta to adjust marker positions.
+  private storedMeshMatrix: THREE.Matrix4 | null = null;
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.objects = new Map();
@@ -160,6 +165,14 @@ export class SceneManager {
   }
 
   /**
+   * Sync overlay (point cloud) transform with the splat mesh.
+   * Call every frame to keep the point cloud aligned during gizmo transforms.
+   */
+  syncOverlay(): void {
+    this.splatRenderer?.updateOverlay?.();
+  }
+
+  /**
    * Get the splat scene bounding box
    */
   getSplatBoundingBox(): THREE.Box3 | null {
@@ -228,9 +241,59 @@ export class SceneManager {
 
   /**
    * Set the splat visualization mode (solid, centers, rings)
+   *
+   * When switching to point cloud mode, markers are reparented to the scene
+   * because Three.js hides children of invisible parents (splatMesh.visible=false).
+   *
+   * To handle transforms that occur during point cloud mode:
+   * 1. Store mesh's world matrix when entering point cloud mode
+   * 2. When exiting, calculate delta between stored and current matrix
+   * 3. Apply delta to all marker positions before reparenting back to mesh
    */
   setSplatViewMode(mode: SplatViewMode): void {
     this.splatRenderer?.setSplatViewMode(mode);
+
+    const splatMesh = this.splatRenderer?.getMesh();
+    if (!splatMesh) return;
+
+    if (mode === 'pointcloud') {
+      // Hide markers in point cloud mode (UX: static markers are confusing during transforms)
+      this.measurementRenderer?.setVisible(false);
+      this.annotationRenderer?.setVisible(false);
+
+      // Store current mesh transform before reparenting to scene
+      splatMesh.updateMatrixWorld(true);
+      this.storedMeshMatrix = splatMesh.matrixWorld.clone();
+
+      // Reparent to scene (converts mesh-local → world coords)
+      this.measurementRenderer?.setParentObject(this.scene);
+      this.annotationRenderer?.setParentObject(this.scene);
+    } else {
+      // Switching back to model mode
+      if (this.storedMeshMatrix) {
+        // Calculate delta: how the mesh moved during point cloud mode
+        // deltaMatrix = currentMatrix × storedMatrix⁻¹
+        splatMesh.updateMatrixWorld(true);
+        const currentMatrix = splatMesh.matrixWorld;
+        const inverseStored = this.storedMeshMatrix.clone().invert();
+        const deltaMatrix = new THREE.Matrix4().multiplyMatrices(currentMatrix, inverseStored);
+
+        // Apply delta to all markers (adjusts their world positions)
+        // This must happen BEFORE setParentObject() reparents them
+        this.measurementRenderer?.applyWorldTransform(deltaMatrix);
+        this.annotationRenderer?.applyWorldTransform(deltaMatrix);
+
+        this.storedMeshMatrix = null;
+      }
+
+      // Reparent back to mesh (converts world → mesh-local coords)
+      this.measurementRenderer?.setParentObject(splatMesh);
+      this.annotationRenderer?.setParentObject(splatMesh);
+
+      // Show markers when returning to model mode (at correct updated positions)
+      this.measurementRenderer?.setVisible(true);
+      this.annotationRenderer?.setVisible(true);
+    }
   }
 
   /**

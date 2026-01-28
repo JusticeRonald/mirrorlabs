@@ -273,9 +273,18 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
         if (!this.overlay.isCentersBuilt) {
           this.overlay.buildCenters(this.splatMesh);
         }
+        this.overlay.syncTransform();
         this.overlay.showCenters();
         break;
     }
+  }
+
+  /**
+   * Sync the overlay point cloud transform with the splat mesh.
+   * Call every frame to keep the point cloud aligned during gizmo transforms.
+   */
+  updateOverlay(): void {
+    this.overlay?.syncTransform();
   }
 
   dispose(): void {
