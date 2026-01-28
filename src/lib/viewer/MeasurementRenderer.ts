@@ -90,6 +90,9 @@ export class MeasurementRenderer {
   // Debounce timer for resize handler
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Visibility state
+  private visible: boolean = true;
+
   constructor(scene: THREE.Scene, config: Partial<MeasurementConfig> = {}) {
     this.scene = scene;
     this.parentObject = scene; // Default to scene
@@ -807,6 +810,16 @@ export class MeasurementRenderer {
       this.previewGroup = null;
       this.previewLabel = null;
     }
+  }
+
+  /**
+   * Show or hide all measurement 3D objects (lines, labels, fills)
+   */
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
+    this.measurements.forEach((group) => { group.visible = visible; });
+    if (this.previewGroup) { this.previewGroup.visible = visible; }
   }
 
   /**

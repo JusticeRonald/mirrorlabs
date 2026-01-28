@@ -276,6 +276,14 @@ export interface ViewerState {
   splatLoadProgress: SplatLoadProgress | null;
   splatLoadError: SplatLoadError | null;
   splatMetadata: SplatSceneMetadata | null;
+
+  // Clean view mode (H key toggle)
+  isCleanViewMode: boolean;
+  cleanViewPreviousState: {
+    showGrid: boolean;
+    showMeasurements: boolean;
+    showAnnotations: boolean;
+  } | null;
 }
 
 export interface ViewerSettings {
@@ -336,6 +344,10 @@ export const defaultViewerState: ViewerState = {
   splatLoadProgress: null,
   splatLoadError: null,
   splatMetadata: null,
+
+  // Clean view mode
+  isCleanViewMode: false,
+  cleanViewPreviousState: null,
 };
 
 // Tool definitions for the viewer toolbar

@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Save,
 } from 'lucide-react';
+import LayersPopover from '@/components/viewer/LayersPopover';
 import type { TransformMode } from '@/types/viewer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -36,6 +37,11 @@ interface ViewerToolbarProps {
   onResetTransform?: () => void;
   onSaveTransform?: () => void;
   hasUnsavedTransform?: boolean;
+  // Layer visibility
+  showAnnotations: boolean;
+  onToggleAnnotations: () => void;
+  showMeasurements: boolean;
+  onToggleMeasurements: () => void;
 }
 
 interface ToolButtonProps {
@@ -107,6 +113,10 @@ const ViewerToolbar = ({
   onResetTransform,
   onSaveTransform,
   hasUnsavedTransform,
+  showAnnotations,
+  onToggleAnnotations,
+  showMeasurements,
+  onToggleMeasurements,
 }: ViewerToolbarProps) => {
   const { isLoggedIn } = useAuth();
 
@@ -266,13 +276,13 @@ const ViewerToolbar = ({
             shortcut="W"
             onClick={() => onViewModeChange(viewMode === 'wireframe' ? 'solid' : 'wireframe')}
           />
-          <ToolButton
-            id="grid"
-            name="Toggle Grid"
-            icon={Grid3X3}
-            active={showGrid}
-            shortcut="T"
-            onClick={onToggleGrid}
+          <LayersPopover
+            showAnnotations={showAnnotations}
+            showMeasurements={showMeasurements}
+            showGrid={showGrid}
+            onToggleAnnotations={onToggleAnnotations}
+            onToggleMeasurements={onToggleMeasurements}
+            onToggleGrid={onToggleGrid}
           />
         </div>
 

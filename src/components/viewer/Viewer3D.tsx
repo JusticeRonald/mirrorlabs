@@ -6,7 +6,7 @@ import { SceneManager } from '@/lib/viewer/SceneManager';
 import { createSparkRenderer } from '@/lib/viewer/renderers';
 import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
-import { CURSOR_TARGET } from '@/lib/viewer/cursors';
+import { CURSOR_TARGET, CURSOR_GIZMO_DRAG } from '@/lib/viewer/cursors';
 import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint } from '@/types/viewer';
 import { ViewMode } from '@/types/viewer';
 
@@ -123,6 +123,8 @@ const Viewer3D = ({
   const removedGizmoElementsRef = useRef<{ parent: THREE.Object3D; child: THREE.Object3D }[]>([]);
   // Track pointer position for drag detection (to avoid triggering clicks on camera drags)
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  // Track whether the transform gizmo is being dragged (for cursor feedback)
+  const gizmoDraggingRef = useRef(false);
 
   // Store callbacks and values in refs to avoid effect re-runs when parent re-renders
   const onSplatLoadStartRef = useRef(onSplatLoadStart);
@@ -291,14 +293,22 @@ const Viewer3D = ({
     const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
     onAnnotationHoverRef.current?.(annotationId);
 
-    // Update cursor style based on: editing point > selected annotation > active tool > hover state > default
-    // Priority: Selected measurement point > Selected annotation > Placement tool > Hover > Default
+    // Update cursor style based on: gizmo drag > gizmo hover > editing point > selected annotation > active tool > hover state > default
+    // Priority: Gizmo dragging > Gizmo hovered > Selected measurement point > Selected annotation > Placement tool > Hover > Default
     if (containerRef.current) {
       const currentTool = activeToolRef.current;
       const isPlacementTool = currentTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(currentTool);
       const editingPoint = selectedMeasurementPointRef.current;
+      const gizmoHovered = transformControlsRef.current?.axis != null;
+      const gizmoDragging = gizmoDraggingRef.current;
 
-      if (editingPoint) {
+      if (gizmoDragging) {
+        // Show move-arrows cursor when dragging gizmo axis
+        containerRef.current.style.cursor = CURSOR_GIZMO_DRAG;
+      } else if (gizmoHovered) {
+        // Show default cursor when hovering gizmo axis (not CURSOR_TARGET)
+        containerRef.current.style.cursor = 'default';
+      } else if (editingPoint) {
         // Show target cursor when a measurement point is selected (click-to-move mode)
         containerRef.current.style.cursor = CURSOR_TARGET;
       } else if (selectedAnnotationIdRef.current) {
@@ -477,6 +487,7 @@ const Viewer3D = ({
     // Disable OrbitControls while dragging the gizmo
     transformControls.addEventListener('dragging-changed', (event: { value: boolean }) => {
       controls.enabled = !event.value;
+      gizmoDraggingRef.current = event.value;
 
       // Handle rotation gizmo feedback (Godot-style arc + label)
       const activeAxis = event.value ? (transformControls.axis as TransformAxis) : null;

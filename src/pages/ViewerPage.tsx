@@ -127,6 +127,9 @@ const ViewerContent = () => {
     openAnnotationModal,
     closeAnnotationModal,
     loadAnnotations,
+    toggleAnnotations,
+    toggleMeasurements,
+    toggleCleanView,
     openCollaborationPanel,
     closeCollaborationPanel,
     setActiveCollaborationTab,
@@ -588,6 +591,12 @@ const ViewerContent = () => {
     }
   }, [state.measurements, sceneManager]);
 
+  // Sync measurement 3D visibility with state
+  useEffect(() => {
+    const renderer = sceneManagerRef.current?.getMeasurementRenderer();
+    if (renderer) renderer.setVisible(state.showMeasurements);
+  }, [state.showMeasurements]);
+
   // Transform mode change handler
   const handleTransformModeChange = useCallback((mode: TransformMode | null) => {
     setTransformMode(mode);
@@ -854,6 +863,10 @@ const ViewerContent = () => {
           // T for toggle grid
           toggleGrid();
           break;
+        case 'h':
+          // H for clean view toggle (hide/show all layers)
+          toggleCleanView();
+          break;
         case 'delete':
         case 'backspace':
           // Delete selected measurement or annotation (use refs to avoid TDZ)
@@ -889,7 +902,7 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel]);
+  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -1122,7 +1135,7 @@ const ViewerContent = () => {
         />
 
         {/* HTML Annotation Icon Overlay */}
-        <AnnotationIconOverlay
+        {state.showAnnotations && <AnnotationIconOverlay
           annotations={state.annotations.map(a => {
             // Use fallback position for initial render, getWorldPosition provides live updates
             const position = a.position instanceof THREE.Vector3
@@ -1152,10 +1165,10 @@ const ViewerContent = () => {
           }}
           onAnnotationHover={(ann) => hoverAnnotation(ann?.id ?? null)}
           getWorldPosition={(id) => sceneManagerRef.current?.getAnnotationWorldPosition(id) ?? null}
-        />
+        />}
 
         {/* HTML Measurement Point Overlay */}
-        <MeasurementIconOverlay
+        {state.showMeasurements && <MeasurementIconOverlay
           points={state.measurements.flatMap(m =>
             m.points.map((p, i) => {
               // Use fallback position for initial render, getWorldPosition provides live updates
@@ -1181,9 +1194,8 @@ const ViewerContent = () => {
           }
           onPointClick={(point) => {
             // Select the measurement point for editing (shows gizmo)
+            // selectMeasurementPoint now clears activeTool + annotation selection internally
             selectMeasurementPoint(point.measurementId, point.pointIndex);
-            // Clear any active tool to avoid conflicts
-            setActiveTool(null);
             // Open collaboration panel to measurements tab
             openCollaborationPanel('measurements');
           }}
@@ -1191,7 +1203,7 @@ const ViewerContent = () => {
           getWorldPosition={(measurementId, pointIndex) =>
             sceneManagerRef.current?.getMeasurementPointWorldPosition(measurementId, pointIndex) ?? null
           }
-        />
+        />}
       </div>
 
       {/* Loading Overlay */}
@@ -1287,6 +1299,10 @@ const ViewerContent = () => {
         onResetTransform={handleResetTransform}
         onSaveTransform={handleSaveTransform}
         hasUnsavedTransform={hasUnsavedTransform}
+        showAnnotations={state.showAnnotations}
+        onToggleAnnotations={toggleAnnotations}
+        showMeasurements={state.showMeasurements}
+        onToggleMeasurements={toggleMeasurements}
       />
 
       {/* Share Panel */}

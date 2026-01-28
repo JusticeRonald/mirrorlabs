@@ -33,6 +33,7 @@ interface ViewerContextType {
   toggleMeasurements: () => void;
   toggleAnnotations: () => void;
   toggleSavedViews: () => void;
+  toggleCleanView: () => void;
 
   // Measurements
   addMeasurement: (measurement: Omit<Measurement, 'id' | 'createdAt'>) => void;
@@ -114,7 +115,13 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
   // Tool and view state
   const setActiveTool = useCallback((tool: string | null) => {
-    setState(prev => ({ ...prev, activeTool: tool }));
+    setState(prev => ({
+      ...prev,
+      activeTool: tool,
+      selectedAnnotationId: null,
+      selectedMeasurementPoint: null,
+      selectedMeasurementId: null,
+    }));
   }, []);
 
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -135,6 +142,37 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
   const toggleSavedViews = useCallback(() => {
     setState(prev => ({ ...prev, showSavedViews: !prev.showSavedViews }));
+  }, []);
+
+  const toggleCleanView = useCallback(() => {
+    setState(prev => {
+      if (prev.isCleanViewMode) {
+        // Restore previous visibility state
+        const restored = prev.cleanViewPreviousState || {
+          showGrid: true, showMeasurements: true, showAnnotations: true,
+        };
+        return {
+          ...prev,
+          ...restored,
+          isCleanViewMode: false,
+          cleanViewPreviousState: null,
+        };
+      } else {
+        // Save current state, then hide all
+        return {
+          ...prev,
+          cleanViewPreviousState: {
+            showGrid: prev.showGrid,
+            showMeasurements: prev.showMeasurements,
+            showAnnotations: prev.showAnnotations,
+          },
+          showGrid: false,
+          showMeasurements: false,
+          showAnnotations: false,
+          isCleanViewMode: true,
+        };
+      }
+    });
   }, []);
 
   // Measurement actions
@@ -267,6 +305,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       ...prev,
       selectedMeasurementPoint: { measurementId, pointIndex },
       selectedMeasurementId: measurementId, // Also select the measurement itself
+      // Clear other selections for mutual exclusivity
+      activeTool: null,
+      selectedAnnotationId: null,
     }));
   }, []);
 
@@ -399,6 +440,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       selectedAnnotationId: id,
+      // Clear other selections for mutual exclusivity
+      activeTool: null,
+      selectedMeasurementPoint: null,
+      selectedMeasurementId: null,
       // Open panel when selecting an annotation
       isAnnotationPanelOpen: id !== null ? true : prev.isAnnotationPanelOpen,
     }));
@@ -578,6 +623,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     toggleMeasurements,
     toggleAnnotations,
     toggleSavedViews,
+    toggleCleanView,
     addMeasurement,
     removeMeasurement,
     clearMeasurements,
