@@ -173,6 +173,7 @@ const Viewer3D = ({
   const pendingMeasurementPointCountRef = useRef(pendingMeasurementPointCount);
   const onOrbitStartRef = useRef(onOrbitStart);
   const onOrbitEndRef = useRef(onOrbitEnd);
+  const transformModeRef = useRef(transformMode);
   // Track last click time for double-click detection
   const lastClickTimeRef = useRef(0);
   const DOUBLE_CLICK_THRESHOLD = 300; // ms
@@ -204,6 +205,7 @@ const Viewer3D = ({
     pendingMeasurementPointCountRef.current = pendingMeasurementPointCount;
     onOrbitStartRef.current = onOrbitStart;
     onOrbitEndRef.current = onOrbitEnd;
+    transformModeRef.current = transformMode;
   });
 
   // Update activeTool ref SYNCHRONOUSLY before paint to prevent stale closure reads
@@ -479,6 +481,10 @@ const Viewer3D = ({
     // Transform Controls (for gizmo manipulation)
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setSize(0.75); // Slightly smaller gizmo for less visual clutter
+    // Start hidden - visibility controlled by transformMode prop
+    transformControls.enabled = false;
+    transformControls.visible = false;
+    transformControls.getHelper().visible = false;
     scene.add(transformControls.getHelper());
     transformControlsRef.current = transformControls;
 
@@ -781,10 +787,10 @@ const Viewer3D = ({
           fitCameraToBounds(metadata.boundingBox);
         }
 
-        // Attach TransformControls to the splat mesh
+        // Attach TransformControls to the splat mesh only if a transform mode is active
         const transformControls = transformControlsRef.current;
         const splatMesh = sceneManager.getSplatMesh();
-        if (transformControls && splatMesh) {
+        if (transformControls && splatMesh && transformModeRef.current !== null) {
           transformControls.attach(splatMesh);
         }
 
