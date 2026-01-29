@@ -361,12 +361,45 @@ Three account types with different permission levels:
 - [ ] Measurement persistence to Supabase (currently local-only)
 
 ### Branch Status
-Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Both branches are in sync as of January 27, 2026.
+Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Both branches are in sync as of January 29, 2026.
 
 ### To Resume Development
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 29, 2026)
+
+Measurement UX improvements and code quality refactoring:
+
+### Changes Made
+| Category | Summary |
+|----------|---------|
+| **Measurement Preview** | Live preview line showing distance/area during point placement |
+| **Constants Extraction** | Magic numbers moved to `src/lib/viewer/constants.ts` |
+| **Undo Support** | Ctrl+Z removes last measurement point during placement |
+| **Area Confirmation** | Right-click tap confirms area polygon (alternative to closing loop) |
+| **Bug Fix** | Removed stale `setSceneManager()` call after state cleanup |
+
+### New Files
+- `src/lib/viewer/constants.ts` - Centralized constants for thresholds, camera, controls, lighting, grid
+
+### Files Modified
+- `src/pages/ViewerPage.tsx` - Measurement preview, orbit tracking, removed sceneManager state
+- `src/contexts/ViewerContext.tsx` - Added `undoLastMeasurementPoint` action
+- `src/components/viewer/Viewer3D.tsx` - Orbit state tracking for frozen preview
+- `src/lib/viewer/MeasurementRenderer.ts` - Preview line rendering, snap detection
+- `src/components/viewer/MeasurementsTab.tsx` - Unit display improvements
+- `src/components/viewer/CollaborationPanel.tsx` - Minor UI updates
+- `src/components/viewer/MeasurementMarker.tsx` - Hover states
+- `src/components/viewer/AxisNavigator.tsx` - Code cleanup
+- `src/lib/viewer/SceneManager.ts` - Minor adjustments
+- `src/lib/viewer/SplatVisualizationOverlay.ts` - Sync method
+
+### Branch Status
+- `gaussian-splat-viewer` merged to `master` (January 29, 2026)
+
+---
 
 ## Code Review Summary (January 28, 2026)
 
