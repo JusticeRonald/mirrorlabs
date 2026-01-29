@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import earcut from 'earcut';
 import { MeasurementCalculator, type MeasurementUnit } from './MeasurementCalculator';
 import type { MeasurementType } from '@/types/viewer';
 
@@ -46,8 +46,6 @@ export interface MeasurementConfig {
   lineWidth: number;
   /** Area fill opacity (default: 0.2) */
   areaFillOpacity: number;
-  /** Label offset from line midpoint (default: 0.1) */
-  labelOffset: number;
   /** Hover scale (default: 1.1) */
   hoverScale: number;
   /** Selected scale (default: 1.2) */
@@ -56,24 +54,22 @@ export interface MeasurementConfig {
 
 const DEFAULT_CONFIG: MeasurementConfig = {
   lineWidth: 3,
-  areaFillOpacity: 0.2,
-  labelOffset: 0.1,
+  areaFillOpacity: 0.35, // Increased from 0.2 for better visibility
   hoverScale: 1.1,
   selectedScale: 1.2,
 };
 
 /**
- * MeasurementRenderer - Renders distance lines and area polygons with labels
+ * MeasurementRenderer - Renders distance lines and area polygons
  *
- * Uses Three.js Line2 for thick lines and CSS2DObject for labels
- * that always face the camera and have consistent screen size.
+ * Uses Three.js Line2 for thick lines with black outline + white main line.
  * 3D point markers are replaced with HTML overlays (see MeasurementMarker.tsx).
+ * Labels removed - values shown in MeasurementsTab UI panel instead.
  */
 export class MeasurementRenderer {
   private scene: THREE.Scene;
   private parentObject: THREE.Object3D;
   private measurements: Map<string, THREE.Group>;
-  private labels: Map<string, CSS2DObject>;
   private config: MeasurementConfig;
 
   // Resolution for Line2 materials
@@ -85,7 +81,11 @@ export class MeasurementRenderer {
 
   // Preview measurement (in-progress)
   private previewGroup: THREE.Group | null = null;
-  private previewLabel: CSS2DObject | null = null;
+
+  // Preview animation state
+  private previewAnimationId: number | null = null;
+  private previewLine: Line2 | null = null;
+  private previewLineMaterial: LineMaterial | null = null;
 
   // Debounce timer for resize handler
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -97,7 +97,6 @@ export class MeasurementRenderer {
     this.scene = scene;
     this.parentObject = scene; // Default to scene
     this.measurements = new Map();
-    this.labels = new Map();
     this.config = { ...DEFAULT_CONFIG, ...config };
 
     // Handle window resize for Line2 resolution
@@ -136,12 +135,6 @@ export class MeasurementRenderer {
               child.computeLineDistances();
             }
           });
-          const label = this.labels.get(data.id);
-          if (label) {
-            const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
-            label.position.copy(midpoint);
-            label.position.y += this.config.labelOffset;
-          }
         } else if (data.type === 'area' && data.points.length >= 3) {
           const outlinePoints = [...data.points, data.points[0]];
           const positions: number[] = [];
@@ -160,12 +153,6 @@ export class MeasurementRenderer {
               }
             }
           });
-          const label = this.labels.get(data.id);
-          if (label) {
-            const centroid = MeasurementCalculator.calculateCentroid(data.points);
-            label.position.copy(centroid);
-            label.position.y += this.config.labelOffset;
-          }
         }
       }
       oldParent.remove(group);
@@ -210,13 +197,6 @@ export class MeasurementRenderer {
               child.computeLineDistances();
             }
           });
-          // Update label position
-          const label = this.labels.get(data.id);
-          if (label) {
-            const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
-            label.position.copy(midpoint);
-            label.position.y += this.config.labelOffset;
-          }
         } else if (data.type === 'area' && data.points.length >= 3) {
           const outlinePoints = [...data.points, data.points[0]];
           const positions: number[] = [];
@@ -235,13 +215,6 @@ export class MeasurementRenderer {
               }
             }
           });
-          // Update label position
-          const label = this.labels.get(data.id);
-          if (label) {
-            const centroid = MeasurementCalculator.calculateCentroid(data.points);
-            label.position.copy(centroid);
-            label.position.y += this.config.labelOffset;
-          }
         }
       }
     });
@@ -290,6 +263,51 @@ export class MeasurementRenderer {
   };
 
   /**
+   * Start animating the preview line (fast blink + flowing dashes)
+   * Creates a rapid pulsing effect with dashes flowing toward cursor
+   */
+  private startPreviewAnimation(): void {
+    if (this.previewAnimationId !== null) return;
+
+    const CYCLE_DURATION_MS = 300; // 0.3 second cycle (very fast)
+    const DASH_SPEED = -0.15; // Negative = flow toward cursor
+
+    const animate = () => {
+      if (!this.previewLineMaterial) {
+        this.stopPreviewAnimation();
+        return;
+      }
+
+      const now = Date.now();
+
+      // Opacity: sawtooth 1.0 → 0.0 over 300ms
+      const cycleProgress = (now % CYCLE_DURATION_MS) / CYCLE_DURATION_MS;
+      this.previewLineMaterial.opacity = 1.0 - cycleProgress;
+
+      // Dash flow: negative offset pulls toward cursor
+      const elapsedSec = (now % 10000) / 1000;
+      this.previewLineMaterial.dashOffset = elapsedSec * DASH_SPEED;
+
+      this.previewLineMaterial.needsUpdate = true;
+      this.previewAnimationId = requestAnimationFrame(animate);
+    };
+
+    this.previewAnimationId = requestAnimationFrame(animate);
+  }
+
+  /**
+   * Stop the preview line animation
+   */
+  private stopPreviewAnimation(): void {
+    if (this.previewAnimationId !== null) {
+      cancelAnimationFrame(this.previewAnimationId);
+      this.previewAnimationId = null;
+    }
+    this.previewLine = null;
+    this.previewLineMaterial = null;
+  }
+
+  /**
    * Add a distance measurement (line between two points)
    * Note: 3D point markers are replaced with HTML overlays (MeasurementMarker.tsx)
    */
@@ -311,7 +329,6 @@ export class MeasurementRenderer {
     this.parentObject.worldToLocal(localP2);
 
     const distance = MeasurementCalculator.calculateDistance(localP1, localP2);
-    const color = MEASUREMENT_COLORS.distance;
 
     const group = new THREE.Group();
     group.name = `measurement-${id}`;
@@ -360,17 +377,7 @@ export class MeasurementRenderer {
     group.add(line);
 
     // Note: 3D endpoint spheres removed - using HTML overlays instead
-
-    // Create label at midpoint (in local space)
-    const midpoint = MeasurementCalculator.calculateMidpoint(localP1, localP2);
-    const label = this.createLabel(
-      MeasurementCalculator.formatDistance(distance, data.unit),
-      color
-    );
-    label.position.copy(midpoint);
-    label.position.y += this.config.labelOffset;
-    group.add(label);
-    this.labels.set(id, label);
+    // Note: Labels removed - values shown in MeasurementsTab UI panel
 
     // Store measurement data (in local space for transform parenting)
     group.userData = {
@@ -417,7 +424,6 @@ export class MeasurementRenderer {
     });
 
     const area = MeasurementCalculator.calculateArea(localPoints);
-    const color = MEASUREMENT_COLORS.area;
 
     const group = new THREE.Group();
     group.name = `measurement-${id}`;
@@ -475,7 +481,7 @@ export class MeasurementRenderer {
     const fillGeometry = this.createPolygonGeometry(localPoints);
     if (fillGeometry) {
       const fillMaterial = new THREE.MeshBasicMaterial({
-        color,
+        color: MEASUREMENT_COLORS.area,
         transparent: true,
         opacity: this.config.areaFillOpacity,
         side: THREE.DoubleSide,
@@ -487,17 +493,7 @@ export class MeasurementRenderer {
     }
 
     // Note: 3D vertex spheres removed - using HTML overlays instead
-
-    // Create label at centroid (in local space)
-    const centroid = MeasurementCalculator.calculateCentroid(localPoints);
-    const label = this.createLabel(
-      MeasurementCalculator.formatArea(area, data.unit),
-      color
-    );
-    label.position.copy(centroid);
-    label.position.y += this.config.labelOffset;
-    group.add(label);
-    this.labels.set(id, label);
+    // Note: Labels removed - values shown in MeasurementsTab UI panel
 
     // Store measurement data (in local space for transform parenting)
     group.userData = {
@@ -519,24 +515,51 @@ export class MeasurementRenderer {
   }
 
   /**
-   * Create a simple triangulated geometry for a polygon
+   * Create a triangulated geometry for a polygon using earcut algorithm
+   * Supports both convex and concave (L-shaped, complex) polygons
    */
   private createPolygonGeometry(points: THREE.Vector3[]): THREE.BufferGeometry | null {
     if (points.length < 3) return null;
 
-    // Use fan triangulation (works for convex polygons)
-    // For complex polygons, earcut would be better but this is simpler
+    // Build 3D vertices array
     const vertices: number[] = [];
-    const indices: number[] = [];
-
-    // Add vertices
     points.forEach(p => {
       vertices.push(p.x, p.y, p.z);
     });
 
-    // Fan triangulation from first vertex
-    for (let i = 1; i < points.length - 1; i++) {
-      indices.push(0, i, i + 1);
+    // For earcut, we need to project 3D points to 2D
+    // Determine the best projection plane based on polygon normal
+    const normal = this.calculatePolygonNormal(points);
+
+    // Choose projection axes (drop the axis most aligned with normal)
+    const absNormal = new THREE.Vector3(Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z));
+    let flatCoords: number[];
+
+    if (absNormal.y >= absNormal.x && absNormal.y >= absNormal.z) {
+      // Drop Y (horizontal surface) - project to XZ
+      flatCoords = points.flatMap(p => [p.x, p.z]);
+    } else if (absNormal.x >= absNormal.z) {
+      // Drop X - project to YZ
+      flatCoords = points.flatMap(p => [p.y, p.z]);
+    } else {
+      // Drop Z - project to XY
+      flatCoords = points.flatMap(p => [p.x, p.y]);
+    }
+
+    // Triangulate using earcut
+    const indices = earcut(flatCoords);
+
+    if (indices.length === 0) {
+      // Earcut failed, fall back to fan triangulation for convex polygons
+      const fallbackIndices: number[] = [];
+      for (let i = 1; i < points.length - 1; i++) {
+        fallbackIndices.push(0, i, i + 1);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setIndex(fallbackIndices);
+      geometry.computeVertexNormals();
+      return geometry;
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -548,73 +571,38 @@ export class MeasurementRenderer {
   }
 
   /**
-   * Create a CSS2D label element
+   * Calculate the normal vector of a polygon using Newell's method
    */
-  private createLabel(text: string, color: number): CSS2DObject {
-    const div = document.createElement('div');
-    div.className = 'measurement-label';
-    div.textContent = text;
-    div.style.cssText = `
-      background: rgba(15, 15, 16, 0.9);
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-weight: 500;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      pointer-events: none;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    `;
+  private calculatePolygonNormal(points: THREE.Vector3[]): THREE.Vector3 {
+    const normal = new THREE.Vector3(0, 0, 0);
 
-    // Add colored indicator dot
-    const dot = document.createElement('span');
-    dot.style.cssText = `
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #${color.toString(16).padStart(6, '0')};
-      margin-right: 6px;
-      vertical-align: middle;
-    `;
-    div.insertBefore(dot, div.firstChild);
+    for (let i = 0; i < points.length; i++) {
+      const current = points[i];
+      const next = points[(i + 1) % points.length];
 
-    const label = new CSS2DObject(div);
-    label.name = 'measurement-label';
-    return label;
+      normal.x += (current.y - next.y) * (current.z + next.z);
+      normal.y += (current.z - next.z) * (current.x + next.x);
+      normal.z += (current.x - next.x) * (current.y + next.y);
+    }
+
+    normal.normalize();
+
+    // Default to Y-up if degenerate
+    if (normal.lengthSq() === 0) {
+      normal.set(0, 1, 0);
+    }
+
+    return normal;
   }
 
   /**
-   * Update a measurement's displayed value and unit
+   * Update a measurement's unit (stored data only, no labels)
    */
   updateMeasurement(id: string, unit: MeasurementUnit): void {
     const group = this.measurements.get(id);
     if (!group) return;
 
     const data = group.userData.data as MeasurementData;
-    const label = this.labels.get(id);
-
-    if (!label) return;
-
-    // Recalculate value in new unit
-    const baseValue = data.value; // Value is stored in base units (meters)
-    const convertedValue = MeasurementCalculator.convertUnits(baseValue, 'm', unit);
-
-    // Update label text
-    const div = label.element;
-    const textNode = div.lastChild;
-    if (textNode) {
-      if (data.type === 'distance') {
-        textNode.textContent = MeasurementCalculator.formatDistance(convertedValue, unit);
-      } else if (data.type === 'area') {
-        const convertedArea = MeasurementCalculator.convertAreaUnits(baseValue, 'm', unit);
-        textNode.textContent = MeasurementCalculator.formatArea(convertedArea, unit);
-      }
-    }
-
-    // Update stored unit
     data.unit = unit;
   }
 
@@ -650,8 +638,6 @@ export class MeasurementRenderer {
       }
     });
 
-    // Remove label reference
-    this.labels.delete(id);
     this.measurements.delete(id);
 
     // Clear state
@@ -743,104 +729,121 @@ export class MeasurementRenderer {
 
   /**
    * Show a preview line while measuring distance
-   * Note: Using standard Line for preview (dashed) - Line2 doesn't support dashing well
+   * Uses animated Line2 for high visibility (pulsing opacity)
    */
   showDistancePreview(p1: THREE.Vector3, p2: THREE.Vector3): void {
     this.clearPreview();
 
-    const distance = MeasurementCalculator.calculateDistance(p1, p2);
-    const color = MEASUREMENT_COLORS.preview;
+    // Use full line length to cursor (magnifier hidden during preview drawing)
+    const endPoint = p2.clone();
 
     this.previewGroup = new THREE.Group();
     this.previewGroup.name = 'measurement-preview';
 
-    // Create dashed line (using standard Line for dashing support)
-    const lineMaterial = new THREE.LineDashedMaterial({
-      color,
-      linewidth: this.config.lineWidth,
-      dashSize: 0.1,
-      gapSize: 0.05,
+    // Create thin animated Line2 for visibility
+    const lineGeometry = new LineGeometry();
+    lineGeometry.setPositions([p1.x, p1.y, p1.z, endPoint.x, endPoint.y, endPoint.z]);
+
+    // Main preview line - white dashed, thin
+    this.previewLineMaterial = new LineMaterial({
+      color: 0xFFFFFF, // White for visibility
+      linewidth: 1.5, // Thin line (~1.5px)
+      resolution: this.resolution,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.0,
+      polygonOffsetUnits: -1.0,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9,
+      dashed: true,
+      dashSize: 0.05,
+      gapSize: 0.03,
     });
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const line = new THREE.Line(lineGeometry, lineMaterial);
-    line.computeLineDistances();
-    this.previewGroup.add(line);
 
-    // Note: Preview endpoint spheres removed - HTML overlay will show points
+    this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
+    this.previewLine.computeLineDistances();
+    this.previewLine.name = 'preview-line';
+    this.previewLine.renderOrder = 99;
+    this.previewGroup.add(this.previewLine);
 
-    // Create preview label
-    const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
-    this.previewLabel = this.createLabel(
-      MeasurementCalculator.formatDistance(distance, 'ft'), // Default to feet
-      color
-    );
-    this.previewLabel.position.copy(midpoint);
-    this.previewLabel.position.y += this.config.labelOffset;
-    this.previewGroup.add(this.previewLabel);
+    // Start the dash animation (marching ants effect)
+    this.startPreviewAnimation();
 
     this.scene.add(this.previewGroup);
   }
 
   /**
    * Show a preview polygon while measuring area
-   * Note: Using standard Line for preview (dashed) - Line2 doesn't support dashing well
+   * Uses animated Line2 for high visibility (pulsing opacity)
    */
   showAreaPreview(points: THREE.Vector3[], cursorPoint?: THREE.Vector3): void {
     this.clearPreview();
 
     if (points.length === 0) return;
 
-    const allPoints = cursorPoint ? [...points, cursorPoint] : points;
-    const color = MEASUREMENT_COLORS.preview;
-
     this.previewGroup = new THREE.Group();
     this.previewGroup.name = 'area-preview';
 
-    // Create polygon outline (including cursor point if provided)
+    // Build points array (full line to cursor - magnifier hidden during preview drawing)
+    const allPoints: THREE.Vector3[] = cursorPoint && points.length > 0
+      ? [...points, cursorPoint.clone()]
+      : points;
+
+    // Create polygon outline (including shortened cursor point if provided)
     const outlinePoints = allPoints.length >= 3
       ? [...allPoints, allPoints[0]] // Close the polygon
       : allPoints;
 
-    const outlineMaterial = new THREE.LineDashedMaterial({
-      color,
-      linewidth: this.config.lineWidth,
-      dashSize: 0.1,
-      gapSize: 0.05,
+    const positions: number[] = [];
+    outlinePoints.forEach(p => {
+      positions.push(p.x, p.y, p.z);
     });
-    const outlineGeometry = new THREE.BufferGeometry().setFromPoints(outlinePoints);
-    const outline = new THREE.Line(outlineGeometry, outlineMaterial);
-    outline.computeLineDistances();
-    this.previewGroup.add(outline);
 
-    // Create fill if we have enough points
-    if (allPoints.length >= 3) {
-      const fillGeometry = this.createPolygonGeometry(allPoints);
+    // Main preview line - white dashed, thin
+    const lineGeometry = new LineGeometry();
+    lineGeometry.setPositions(positions);
+
+    this.previewLineMaterial = new LineMaterial({
+      color: 0xFFFFFF, // White for visibility
+      linewidth: 1.5, // Thin line (~1.5px)
+      resolution: this.resolution,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.0,
+      polygonOffsetUnits: -1.0,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9,
+      dashed: true,
+      dashSize: 0.05,
+      gapSize: 0.03,
+    });
+
+    this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
+    this.previewLine.computeLineDistances();
+    this.previewLine.name = 'preview-line';
+    this.previewLine.renderOrder = 99;
+    this.previewGroup.add(this.previewLine);
+
+    // Start the dash animation (marching ants effect)
+    this.startPreviewAnimation();
+
+    // For fill and label, use FULL cursor point (not shortened) for accurate area calculation
+    const fullPoints = cursorPoint ? [...points, cursorPoint] : points;
+
+    // Create fill if we have enough points (purple with increased opacity)
+    if (fullPoints.length >= 3) {
+      const fillGeometry = this.createPolygonGeometry(fullPoints);
       if (fillGeometry) {
         const fillMaterial = new THREE.MeshBasicMaterial({
-          color,
+          color: MEASUREMENT_COLORS.area, // Purple for area preview
           transparent: true,
-          opacity: this.config.areaFillOpacity * 0.5,
+          opacity: this.config.areaFillOpacity * 0.6, // ~21% in preview
           side: THREE.DoubleSide,
           depthWrite: false,
         });
         const fill = new THREE.Mesh(fillGeometry, fillMaterial);
         this.previewGroup.add(fill);
       }
-    }
-
-    // Note: Preview vertex spheres removed - HTML overlay will show points
-
-    // Create preview label at centroid if we have enough points
-    if (allPoints.length >= 3) {
-      const area = MeasurementCalculator.calculateArea(allPoints);
-      const centroid = MeasurementCalculator.calculateCentroid(allPoints);
-      this.previewLabel = this.createLabel(
-        MeasurementCalculator.formatArea(area, 'ft'), // Default to feet
-        color
-      );
-      this.previewLabel.position.copy(centroid);
-      this.previewLabel.position.y += this.config.labelOffset;
-      this.previewGroup.add(this.previewLabel);
     }
 
     this.scene.add(this.previewGroup);
@@ -850,8 +853,13 @@ export class MeasurementRenderer {
    * Clear the preview measurement
    */
   clearPreview(): void {
+    // Stop animation first
+    this.stopPreviewAnimation();
+
+    // Clear preview group
     if (this.previewGroup) {
       this.scene.remove(this.previewGroup);
+
       this.previewGroup.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose();
@@ -873,12 +881,11 @@ export class MeasurementRenderer {
         }
       });
       this.previewGroup = null;
-      this.previewLabel = null;
     }
   }
 
   /**
-   * Show or hide all measurement 3D objects (lines, labels, fills)
+   * Show or hide all measurement 3D objects (lines, fills)
    */
   setVisible(visible: boolean): void {
     if (this.visible === visible) return;
@@ -948,21 +955,6 @@ export class MeasurementRenderer {
           child.computeLineDistances();
         }
       });
-
-      // Update label position and text
-      const label = this.labels.get(id);
-      if (label) {
-        const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
-        label.position.copy(midpoint);
-        label.position.y += this.config.labelOffset;
-
-        // Update label text
-        const div = label.element;
-        const textNode = div.lastChild;
-        if (textNode) {
-          textNode.textContent = MeasurementCalculator.formatDistance(data.value, data.unit);
-        }
-      }
     } else if (data.type === 'area') {
       const points = data.points;
       const outlinePoints = [...points, points[0]]; // Close the polygon
@@ -987,21 +979,6 @@ export class MeasurementRenderer {
           }
         }
       });
-
-      // Update label position and text
-      const label = this.labels.get(id);
-      if (label) {
-        const centroid = MeasurementCalculator.calculateCentroid(points);
-        label.position.copy(centroid);
-        label.position.y += this.config.labelOffset;
-
-        // Update label text
-        const div = label.element;
-        const textNode = div.lastChild;
-        if (textNode) {
-          textNode.textContent = MeasurementCalculator.formatArea(data.value, data.unit);
-        }
-      }
     }
   }
 
@@ -1019,6 +996,7 @@ export class MeasurementRenderer {
    */
   dispose(): void {
     this.clear();
+    this.stopPreviewAnimation();
     window.removeEventListener('resize', this.handleResize);
     // Clear debounce timer
     if (this.resizeDebounceTimer) {

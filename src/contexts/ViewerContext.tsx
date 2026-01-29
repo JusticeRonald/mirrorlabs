@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import * as THREE from 'three';
 import {
   ViewerState,
@@ -46,6 +46,7 @@ interface ViewerContextType {
   // Measurement creation (multi-point collection)
   startMeasurement: (type: 'distance' | 'area') => void;
   addMeasurementPoint: (point: THREE.Vector3) => void;
+  undoLastMeasurementPoint: () => void;
   cancelMeasurement: () => void;
   finalizeMeasurement: (createdBy: string) => Measurement | null;
 
@@ -226,6 +227,33 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       if (!prev.pendingMeasurement) return prev;
 
       const newPoints = [...prev.pendingMeasurement.points, point.clone()];
+      return {
+        ...prev,
+        pendingMeasurement: {
+          ...prev.pendingMeasurement,
+          points: newPoints,
+        },
+      };
+    });
+  }, []);
+
+  // Undo the last point from the pending measurement
+  const undoLastMeasurementPoint = useCallback(() => {
+    setState(prev => {
+      if (!prev.pendingMeasurement || prev.pendingMeasurement.points.length === 0) {
+        return prev;
+      }
+
+      const newPoints = prev.pendingMeasurement.points.slice(0, -1);
+
+      // If no points left, cancel the measurement
+      if (newPoints.length === 0) {
+        return {
+          ...prev,
+          pendingMeasurement: null,
+        };
+      }
+
       return {
         ...prev,
         pendingMeasurement: {
@@ -622,7 +650,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     }));
   }, []);
 
-  const value: ViewerContextType = {
+  const value: ViewerContextType = useMemo(() => ({
     state,
     permissions,
     userRole,
@@ -640,6 +668,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     loadMeasurements,
     startMeasurement,
     addMeasurementPoint,
+    undoLastMeasurementPoint,
     cancelMeasurement,
     finalizeMeasurement,
     selectMeasurement,
@@ -678,7 +707,64 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setSplatError,
     setSplatMetadata,
     clearSplatScene,
-  };
+  }), [
+    state,
+    permissions,
+    userRole,
+    setActiveTool,
+    setViewMode,
+    setSplatViewMode,
+    toggleGrid,
+    toggleMeasurements,
+    toggleAnnotations,
+    toggleSavedViews,
+    toggleCleanView,
+    addMeasurement,
+    removeMeasurement,
+    clearMeasurements,
+    loadMeasurements,
+    startMeasurement,
+    addMeasurementPoint,
+    undoLastMeasurementPoint,
+    cancelMeasurement,
+    finalizeMeasurement,
+    selectMeasurement,
+    hoverMeasurement,
+    setMeasurementUnit,
+    selectMeasurementPoint,
+    clearMeasurementPointSelection,
+    updateMeasurementPoint,
+    addAnnotation,
+    removeAnnotation,
+    addAnnotationReply,
+    updateAnnotationStatus,
+    updateAnnotationPosition,
+    clearAnnotations,
+    loadAnnotations,
+    selectAnnotation,
+    hoverAnnotation,
+    openAnnotationPanel,
+    closeAnnotationPanel,
+    openAnnotationModal,
+    closeAnnotationModal,
+    openCollaborationPanel,
+    closeCollaborationPanel,
+    setActiveCollaborationTab,
+    setActiveMarkupTool,
+    setDrawingMode,
+    addSavedView,
+    updateSavedView,
+    removeSavedView,
+    reorderSavedViews,
+    setActiveSavedView,
+    loadSavedViews,
+    selectObject,
+    setSplatLoading,
+    setSplatProgress,
+    setSplatError,
+    setSplatMetadata,
+    clearSplatScene,
+  ]);
 
   return (
     <ViewerContext.Provider value={value}>

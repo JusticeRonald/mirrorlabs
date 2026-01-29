@@ -133,10 +133,19 @@ export function CollaborationPanel({
     }
   };
 
-  // Handle area icon click (disabled for now)
+  // Handle area icon click
   const handleAreaClick = () => {
-    // Area tool not implemented yet - do nothing
-    // When ready, will work like handleDistanceClick but with 'area'
+    if (activeTab === 'measurements' && isExpanded && activeTool === 'area') {
+      // Click same tool when active: collapse and deactivate
+      onExpandedChange(false);
+      onToolChange(null);
+    } else {
+      // Expand, switch tab, and activate area tool
+      onExpandedChange(true);
+      onTabChange('measurements');
+      onToolChange('area');
+      onStartMeasurement?.('area');
+    }
   };
 
   // Handle views icon click
@@ -159,6 +168,7 @@ export function CollaborationPanel({
 
   const isAnnotationActive = activeTool === 'comment' || activeTool === 'pin';
   const isDistanceActive = activeTool === 'distance';
+  const isAreaActive = activeTool === 'area';
 
   // Convert Annotation to AnnotationData for AnnotationPanel
   const annotationToData = (ann: Annotation): AnnotationData => ({
@@ -264,21 +274,30 @@ export function CollaborationPanel({
             </TooltipContent>
           </Tooltip>
 
-          {/* Area Icon (Disabled) */}
+          {/* Area Icon */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="relative flex items-center justify-center h-10 w-full transition-colors text-neutral-600 cursor-not-allowed"
+                className={cn(
+                  'relative flex items-center justify-center h-10 w-full transition-colors',
+                  activeTab === 'measurements' && isExpanded && isAreaActive
+                    ? 'text-white bg-neutral-800'
+                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50',
+                  isAreaActive && 'text-green-400'
+                )}
                 onClick={handleAreaClick}
-                disabled
               >
                 <MeasureIcon className="h-5 w-5" />
+                {/* Active indicator */}
+                {activeTab === 'measurements' && isExpanded && isAreaActive && (
+                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-green-500" />
+                )}
               </button>
             </TooltipTrigger>
             <TooltipContent side="left" className="bg-neutral-800 border-neutral-700 text-neutral-100">
               <div className="flex items-center gap-2">
                 <span>Area</span>
-                <span className="text-[10px] bg-neutral-700 px-1.5 py-0.5 rounded">Coming Soon</span>
+                <kbd className="px-1.5 py-0.5 text-xs bg-neutral-700 rounded">A</kbd>
               </div>
             </TooltipContent>
           </Tooltip>

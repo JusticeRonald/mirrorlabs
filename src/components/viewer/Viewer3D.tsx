@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -8,18 +8,15 @@ import { RotationGizmoFeedback } from '@/lib/viewer/RotationGizmoFeedback';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import { MagnifierUpdater } from '@/lib/viewer/MagnifierUpdater';
 import { CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
-import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Annotation, Measurement, SelectedMeasurementPoint, SplatViewMode } from '@/types/viewer';
-import { ViewMode } from '@/types/viewer';
+import { useViewer } from '@/contexts/ViewerContext';
+import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Measurement, SelectedMeasurementPoint, SplatViewMode } from '@/types/viewer';
 
 interface Viewer3DProps {
   className?: string;
   scanId?: string;
-  modelUrl?: string;
   splatUrl?: string;
-  onPointSelect?: (point: THREE.Vector3) => void;
-  viewMode?: ViewMode;
+  onPointSelect?: (point: THREE.Vector3, isDoubleClick?: boolean) => void;
   showGrid?: boolean;
-  activeTool?: string | null;
   onSceneReady?: (sceneManager: SceneManager) => void;
   enableZoom?: boolean;
   onSplatLoadStart?: () => void;
@@ -44,8 +41,6 @@ interface Viewer3DProps {
   hoveredAnnotationId?: string | null;
   /** Currently selected annotation ID (for external control) */
   selectedAnnotationId?: string | null;
-  /** Annotations to render as 3D markers (deprecated - using HTML overlay instead) */
-  annotations?: Annotation[];
   /** Callback to expose the camera to parent for HTML annotation overlay */
   onCameraReady?: (camera: THREE.PerspectiveCamera) => void;
   /** Measurements for point editing */
@@ -72,17 +67,22 @@ interface Viewer3DProps {
   onMousePositionUpdate?: (x: number, y: number, visible: boolean) => void;
   /** Splat visualization mode (model/pointcloud) */
   splatViewMode?: SplatViewMode;
+  /** Callback for cursor position on splat surface during measurement placement */
+  onMeasurementCursorUpdate?: (position: THREE.Vector3 | null) => void;
+  /** Number of points placed in pending measurement (for magnifier visibility) */
+  pendingMeasurementPointCount?: number;
+  /** Callback when orbit (camera drag) starts */
+  onOrbitStart?: () => void;
+  /** Callback when orbit (camera drag) ends */
+  onOrbitEnd?: () => void;
 }
 
 const Viewer3D = ({
   className = '',
   scanId,
-  modelUrl,
   splatUrl,
   onPointSelect,
-  viewMode = 'solid',
   showGrid = true,
-  activeTool = null,
   onSceneReady,
   enableZoom = true,
   onSplatLoadStart,
@@ -98,7 +98,6 @@ const Viewer3D = ({
   onAnnotationSelect,
   hoveredAnnotationId,
   selectedAnnotationId,
-  annotations,
   onCameraReady,
   measurements,
   selectedMeasurementPoint,
@@ -112,7 +111,14 @@ const Viewer3D = ({
   magnifierCanvas,
   onMousePositionUpdate,
   splatViewMode = 'model',
+  onMeasurementCursorUpdate,
+  pendingMeasurementPointCount = 0,
+  onOrbitStart,
+  onOrbitEnd,
 }: Viewer3DProps) => {
+  // Get active tool from ViewerContext directly (avoids prop-drilling timing issues)
+  const { state } = useViewer();
+
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -152,7 +158,7 @@ const Viewer3D = ({
   const onResetViewRef = useRef(onResetView);
   const onAnnotationHoverRef = useRef(onAnnotationHover);
   const onAnnotationSelectRef = useRef(onAnnotationSelect);
-  const activeToolRef = useRef(activeTool);
+  const activeToolRef = useRef(state.activeTool);
   const onPointSelectRef = useRef(onPointSelect);
   const onCameraReadyRef = useRef(onCameraReady);
   const onMeasurementPointMoveRef = useRef(onMeasurementPointMove);
@@ -163,6 +169,13 @@ const Viewer3D = ({
   const onRendererReadyRef = useRef(onRendererReady);
   const onControlsReadyRef = useRef(onControlsReady);
   const onMousePositionUpdateRef = useRef(onMousePositionUpdate);
+  const onMeasurementCursorUpdateRef = useRef(onMeasurementCursorUpdate);
+  const pendingMeasurementPointCountRef = useRef(pendingMeasurementPointCount);
+  const onOrbitStartRef = useRef(onOrbitStart);
+  const onOrbitEndRef = useRef(onOrbitEnd);
+  // Track last click time for double-click detection
+  const lastClickTimeRef = useRef(0);
+  const DOUBLE_CLICK_THRESHOLD = 300; // ms
 
   // Keep callback refs updated
   // Intentionally no deps - refs should always have latest callback values to avoid stale closures
@@ -177,7 +190,6 @@ const Viewer3D = ({
     onResetViewRef.current = onResetView;
     onAnnotationHoverRef.current = onAnnotationHover;
     onAnnotationSelectRef.current = onAnnotationSelect;
-    activeToolRef.current = activeTool;
     onPointSelectRef.current = onPointSelect;
     onCameraReadyRef.current = onCameraReady;
     onMeasurementPointMoveRef.current = onMeasurementPointMove;
@@ -188,7 +200,17 @@ const Viewer3D = ({
     onRendererReadyRef.current = onRendererReady;
     onControlsReadyRef.current = onControlsReady;
     onMousePositionUpdateRef.current = onMousePositionUpdate;
+    onMeasurementCursorUpdateRef.current = onMeasurementCursorUpdate;
+    pendingMeasurementPointCountRef.current = pendingMeasurementPointCount;
+    onOrbitStartRef.current = onOrbitStart;
+    onOrbitEndRef.current = onOrbitEnd;
   });
+
+  // Update activeTool ref SYNCHRONOUSLY before paint to prevent stale closure reads
+  // useLayoutEffect runs after render but before paint, ensuring ref is current before user interaction
+  useLayoutEffect(() => {
+    activeToolRef.current = state.activeTool;
+  }, [state.activeTool]);
 
   // Track pointer position on mousedown for drag detection
   const handlePointerDown = useCallback((event: PointerEvent) => {
@@ -213,6 +235,11 @@ const Viewer3D = ({
     }
     pointerDownRef.current = null;
 
+    // Detect double-click
+    const now = Date.now();
+    const isDoubleClick = (now - lastClickTimeRef.current) < DOUBLE_CLICK_THRESHOLD;
+    lastClickTimeRef.current = now;
+
     const rect = containerRef.current.getBoundingClientRect();
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -233,14 +260,14 @@ const Viewer3D = ({
       // Try splat picking first
       const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
       if (pickResult) {
-        pointSelectCallback(pickResult.position.clone());
+        pointSelectCallback(pickResult.position.clone(), isDoubleClick);
         return;
       }
 
       // Fall back to regular raycasting for non-splat content
       const intersections = sceneManagerRef.current.raycast(cameraRef.current, pointer);
       if (intersections.length > 0) {
-        pointSelectCallback(intersections[0].point.clone());
+        pointSelectCallback(intersections[0].point.clone(), isDoubleClick);
       }
     }
   }, []);
@@ -255,10 +282,13 @@ const Viewer3D = ({
     const mx = event.clientX - rect.left;
     const my = event.clientY - rect.top;
     magnifierUpdaterRef.current?.setMousePosition(mx, my);
-    // Hide magnifier during gizmo drag OR hover to avoid visual clutter
+    // Hide magnifier during gizmo interaction OR while drawing measurement preview
+    // Preview drawing = after first point placed (pendingMeasurementPointCount >= 1)
+    // This shows magnifier for initial point placement but hides it while drawing the preview line
     const gizmoHovered = transformControlsRef.current?.axis != null;
     const gizmoActive = gizmoDraggingRef.current || gizmoHovered;
-    const magnifierVisible = (magnifierUpdaterRef.current?.enabled ?? false) && !gizmoActive;
+    const isDrawingPreview = pendingMeasurementPointCountRef.current >= 1;
+    const magnifierVisible = (magnifierUpdaterRef.current?.enabled ?? false) && !gizmoActive && !isDrawingPreview;
     onMousePositionUpdateRef.current?.(mx, my, magnifierVisible);
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -269,18 +299,24 @@ const Viewer3D = ({
     const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
     onAnnotationHoverRef.current?.(annotationId);
 
+    // Report cursor position for measurement preview (when distance/area tool active)
+    const currentTool = activeToolRef.current;
+    if (currentTool && ['distance', 'area'].includes(currentTool)) {
+      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
+      onMeasurementCursorUpdateRef.current?.(pickResult?.position.clone() ?? null);
+    }
+
     // Update cursor style based on: gizmo drag > gizmo hover > active tool > hover state > default
     // Priority: Gizmo dragging > Gizmo hovered > Placement tool > Hover > Default
     if (containerRef.current) {
-      const currentTool = activeToolRef.current;
       const isPlacementTool = currentTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(currentTool);
-      const gizmoHovered = transformControlsRef.current?.axis != null;
+      const gizmoHoveredForCursor = transformControlsRef.current?.axis != null;
       const gizmoDragging = gizmoDraggingRef.current;
 
       if (gizmoDragging) {
         // Show move-arrows cursor when dragging gizmo axis
         containerRef.current.style.cursor = CURSOR_GIZMO_DRAG;
-      } else if (gizmoHovered) {
+      } else if (gizmoHoveredForCursor) {
         // Show default cursor when hovering gizmo axis
         containerRef.current.style.cursor = 'default';
       } else if (isPlacementTool) {
@@ -294,27 +330,6 @@ const Viewer3D = ({
       }
     }
   }, []);
-
-  // Update view mode (for non-splat content)
-  useEffect(() => {
-    if (!meshRef.current) return;
-
-    const mesh = meshRef.current;
-    const material = mesh.material as THREE.MeshStandardMaterial;
-
-    switch (viewMode) {
-      case 'wireframe':
-        material.wireframe = true;
-        break;
-      case 'points':
-        material.wireframe = true;
-        break;
-      case 'solid':
-      default:
-        material.wireframe = false;
-        break;
-    }
-  }, [viewMode]);
 
   // Update grid visibility (includes axis lines)
   useEffect(() => {
@@ -442,10 +457,24 @@ const Viewer3D = ({
     controls.minDistance = 0.1;
     controls.maxDistance = 500;
     controls.enableZoom = enableZoom;
+    // Configure mouse buttons: Left=rotate, Middle=rotate (alt orbit), Right=pan
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.ROTATE,
+      RIGHT: THREE.MOUSE.PAN,
+    };
     controlsRef.current = controls;
 
     // Notify parent that controls are ready (for axis navigator gizmo)
     onControlsReadyRef.current?.(controls);
+
+    // Orbit state callbacks (for freezing preview during camera drag)
+    controls.addEventListener('start', () => {
+      onOrbitStartRef.current?.();
+    });
+    controls.addEventListener('end', () => {
+      onOrbitEndRef.current?.();
+    });
 
     // Transform Controls (for gizmo manipulation)
     const transformControls = new TransformControls(camera, renderer.domElement);
@@ -696,7 +725,7 @@ const Viewer3D = ({
         containerRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [scanId, modelUrl, onSceneReady, handlePointerDown, handleClick, handleMouseMove, enableZoom, splatUrl]);
+  }, [scanId, onSceneReady, handlePointerDown, handleClick, handleMouseMove, enableZoom, splatUrl]);
 
   // Load splat when URL changes (must run AFTER main scene setup)
   useEffect(() => {
@@ -1063,22 +1092,26 @@ const Viewer3D = ({
   // Update cursor immediately when tool changes
   useEffect(() => {
     if (containerRef.current) {
-      const isPlacementTool = activeTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(activeTool);
+      const isPlacementTool = state.activeTool && ['comment', 'pin', 'distance', 'area', 'angle'].includes(state.activeTool);
       if (isPlacementTool) {
         containerRef.current.style.cursor = CURSOR_PLACEMENT;
       } else {
         containerRef.current.style.cursor = 'default';
       }
     }
-  }, [activeTool]);
+  }, [state.activeTool]);
+
+  // NOTE: OrbitControls stays enabled during placement tools.
+  // The click vs drag detection (> 3px threshold in handleClick) already
+  // distinguishes between navigation and point placement.
 
   // Sync magnifier enabled state with active tool (placement only, not repositioning)
   // Repositioning uses transform gizmo instead, so magnifier is not needed
   useEffect(() => {
     const placementTools = ['comment', 'pin', 'distance', 'area', 'angle'];
-    const isPlacement = activeTool != null && placementTools.includes(activeTool);
+    const isPlacement = state.activeTool != null && placementTools.includes(state.activeTool);
     magnifierUpdaterRef.current?.setEnabled(isPlacement);
-  }, [activeTool]);
+  }, [state.activeTool]);
 
   // Sync magnifier canvas prop
   useEffect(() => {
@@ -1089,7 +1122,7 @@ const Viewer3D = ({
     <div
       ref={containerRef}
       className={`w-full h-full ${className}`}
-      style={{ minHeight: '400px' }}
+      style={{ minHeight: '400px', position: 'relative' }}
     />
   );
 };

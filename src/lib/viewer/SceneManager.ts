@@ -180,42 +180,6 @@ export class SceneManager {
   }
 
   /**
-   * Set the orientation of the splat mesh
-   * @param orientation Euler angles in radians
-   * @deprecated Use setSplatTransform instead for full transform support
-   */
-  setSplatOrientation(orientation: SplatOrientation): void {
-    this.splatRenderer?.setOrientation(orientation);
-  }
-
-  /**
-   * Get the current orientation of the splat mesh
-   * @returns Current orientation or null if no mesh loaded
-   * @deprecated Use getSplatTransform instead for full transform support
-   */
-  getSplatOrientation(): SplatOrientation | null {
-    return this.splatRenderer?.getOrientation() ?? null;
-  }
-
-  /**
-   * Rotate the splat by incremental amounts (in radians)
-   * @param deltaX Change in X rotation (radians)
-   * @param deltaY Change in Y rotation (radians)
-   * @param deltaZ Change in Z rotation (radians)
-   * @deprecated Use transform gizmo instead
-   */
-  rotateSplatBy(deltaX: number, deltaY: number, deltaZ: number): void {
-    const current = this.getSplatOrientation();
-    if (current) {
-      this.setSplatOrientation({
-        x: current.x + deltaX,
-        y: current.y + deltaY,
-        z: current.z + deltaZ,
-      });
-    }
-  }
-
-  /**
    * Set the full transform (position, rotation, scale) of the splat mesh
    * @param transform The transform to apply
    */
@@ -240,7 +204,7 @@ export class SceneManager {
   }
 
   /**
-   * Set the splat visualization mode (solid, centers, rings)
+   * Set the splat visualization mode ('model' or 'pointcloud')
    *
    * When switching to point cloud mode, markers are reparented to the scene
    * because Three.js hides children of invisible parents (splatMesh.visible=false).

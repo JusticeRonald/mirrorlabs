@@ -1,5 +1,5 @@
 import { useParams, Navigate } from 'react-router-dom';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewerProvider, useViewer } from '@/contexts/ViewerContext';
@@ -34,8 +34,13 @@ import {
 } from '@/lib/supabase/services/annotations';
 import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import { SaveViewDialog } from '@/components/viewer/SaveViewDialog';
-import type { CameraState, SavedView } from '@/types/viewer';
+import type { CameraState, SavedView, Measurement } from '@/types/viewer';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
+import {
+  AREA_SNAP_THRESHOLD,
+  RIGHT_CLICK_CONFIRM_MS,
+  RIGHT_CLICK_MOVE_THRESHOLD,
+} from '@/lib/viewer/constants';
 import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
 import type { Annotation as DbAnnotation, AnnotationReply as DbAnnotationReply } from '@/lib/supabase/database.types';
 import { SceneManager } from '@/lib/viewer/SceneManager';
@@ -109,6 +114,7 @@ const ViewerContent = () => {
     loadMeasurements,
     startMeasurement,
     addMeasurementPoint,
+    undoLastMeasurementPoint,
     cancelMeasurement,
     finalizeMeasurement,
     selectMeasurement,
@@ -146,7 +152,6 @@ const ViewerContent = () => {
   const currentUserId = user?.id || demoSessionId;
 
   const [showSharePanel, setShowSharePanel] = useState(false);
-  const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState<SplatLoadProgress | null>(null);
   const [loadError, setLoadError] = useState<SplatLoadError | null>(null);
@@ -188,6 +193,57 @@ const ViewerContent = () => {
   // Magnifier loupe state
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0, visible: false });
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Measurement preview cursor position (for showing preview line during placement)
+  const [measurementCursorPosition, setMeasurementCursorPosition] = useState<THREE.Vector3 | null>(null);
+
+  // Orbit state tracking (for freezing preview during camera drag)
+  const [isOrbiting, setIsOrbiting] = useState(false);
+
+  // Track if cursor is near first point of area measurement (for snap affordance)
+  const isNearFirstPoint = useMemo(() => {
+    const pending = state.pendingMeasurement;
+    if (pending?.type !== 'area' || pending.points.length < 3 || !measurementCursorPosition) {
+      return false;
+    }
+    const firstPoint = pending.points[0];
+    return measurementCursorPosition.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD;
+  }, [state.pendingMeasurement, measurementCursorPosition]);
+
+  /**
+   * Normalize a position to THREE.Vector3.
+   * Handles both Vector3 instances and plain {x, y, z} objects.
+   */
+  const normalizeVector3 = useCallback((pos: THREE.Vector3 | { x: number; y: number; z: number }): THREE.Vector3 =>
+    pos instanceof THREE.Vector3 ? pos : new THREE.Vector3(pos.x, pos.y, pos.z), []);
+
+  /**
+   * Persist a measurement to Supabase if configured.
+   * Validates all points have finite coordinates within reasonable bounds.
+   * Returns silently on validation failure (measurement saved locally only).
+   */
+  const persistMeasurement = useCallback(async (measurement: Measurement | null) => {
+    if (!measurement || !scanId || !isSupabaseConfigured()) return;
+
+    const allPointsValid = measurement.points.every(p =>
+      isValidPosition({ x: p.x, y: p.y, z: p.z })
+    );
+    if (!allPointsValid) return;
+
+    try {
+      await createMeasurementService({
+        scan_id: scanId,
+        type: measurement.type,
+        points_json: measurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+        value: measurement.value,
+        unit: measurement.unit,
+        label: measurement.label || null,
+        created_by: currentUserId,
+      });
+    } catch {
+      // Measurement saved locally, persistence failed silently
+    }
+  }, [scanId, currentUserId]);
 
   // Real-time annotation subscription
   const { isConnected: isRealtimeConnected } = useAnnotationSubscription({
@@ -444,7 +500,7 @@ const ViewerContent = () => {
   }, [projectId, scanId]);
 
   // Handle point selection for measurements/annotations
-  const handlePointSelect = useCallback(async (point: THREE.Vector3) => {
+  const handlePointSelect = useCallback(async (point: THREE.Vector3, isDoubleClick?: boolean) => {
     if (state.activeTool === 'distance') {
       // Distance measurement: 2 points required
       if (!state.pendingMeasurement) {
@@ -457,38 +513,38 @@ const ViewerContent = () => {
         // Use setTimeout to ensure state update completes before finalizing
         setTimeout(async () => {
           const measurement = finalizeMeasurement(currentUserId);
-          // Persist to Supabase if configured
-          if (measurement && scanId && isSupabaseConfigured()) {
-            // Validate all measurement points before persisting
-            const allPointsValid = measurement.points.every(p =>
-              isValidPosition({ x: p.x, y: p.y, z: p.z })
-            );
-            if (!allPointsValid) {
-              // Invalid coordinates — saved locally only
-            } else {
-              try {
-                await createMeasurementService({
-                  scan_id: scanId,
-                  type: measurement.type,
-                  points_json: measurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                  value: measurement.value,
-                  unit: measurement.unit,
-                  label: measurement.label || null,
-                  created_by: currentUserId,
-                });
-              } catch {
-                // Measurement saved locally, persistence failed silently
-              }
-            }
-          }
+          sceneManagerRef.current?.clearMeasurementPreview();
+          setMeasurementCursorPosition(null);
+          await persistMeasurement(measurement);
         }, 0);
       }
     } else if (state.activeTool === 'area') {
-      // Area measurement: 3+ points required, double-click to close
+      // Area measurement: 3+ points required
+      // Finalization options:
+      // 1. Click near first point (snap-to-close, requires 3+ points)
+      // 2. Press Enter (keyboard shortcut)
+      // Note: Double-click removed to prevent accidental early closure
       if (!state.pendingMeasurement) {
+        // Start a new area measurement
         startMeasurement('area');
         addMeasurementPoint(point);
       } else {
+        const pending = state.pendingMeasurement;
+        const firstPoint = pending.points[0];
+
+        // Click near first point: close polygon (requires 3+ points)
+        if (pending.points.length >= 3 && point.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD) {
+          // Don't add the click point - just close the polygon
+          setTimeout(async () => {
+            const measurement = finalizeMeasurement(currentUserId);
+            sceneManagerRef.current?.clearMeasurementPreview();
+            setMeasurementCursorPosition(null);
+            await persistMeasurement(measurement);
+          }, 0);
+          return;
+        }
+
+        // Normal click: add another point
         addMeasurementPoint(point);
       }
     } else if (state.activeTool === 'pin' || state.activeTool === 'comment') {
@@ -499,7 +555,6 @@ const ViewerContent = () => {
 
   // Handle scene ready
   const handleSceneReady = useCallback((manager: SceneManager) => {
-    setSceneManager(manager);
     sceneManagerRef.current = manager;
   }, []);
 
@@ -520,11 +575,7 @@ const ViewerContent = () => {
     // Add new annotations to scene
     for (const annotation of state.annotations) {
       if (!renderedIds.has(annotation.id)) {
-        const position = annotation.position instanceof THREE.Vector3
-          ? annotation.position
-          : new THREE.Vector3(annotation.position.x, annotation.position.y, annotation.position.z);
-
-        manager.addAnnotation(annotation.id, position, {
+        manager.addAnnotation(annotation.id, normalizeVector3(annotation.position), {
           id: annotation.id,
           scanId: scanId || '',
           type: annotation.type,
@@ -545,7 +596,7 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.annotations, scanId, sceneManager]);
+  }, [state.annotations, scanId]);
 
   // Sync measurements with SceneManager
   useEffect(() => {
@@ -595,13 +646,36 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.measurements, sceneManager]);
+  }, [state.measurements]);
 
   // Sync measurement 3D visibility with state
   useEffect(() => {
     const renderer = sceneManagerRef.current?.getMeasurementRenderer();
     if (renderer) renderer.setVisible(state.showMeasurements);
   }, [state.showMeasurements]);
+
+  // Show measurement preview line during placement (frozen during orbit)
+  useEffect(() => {
+    if (!sceneManagerRef.current) return;
+
+    // Skip preview updates while orbiting (camera drag) - keeps preview frozen
+    if (isOrbiting) return;
+
+    const pending = state.pendingMeasurement;
+
+    if (pending && pending.points.length >= 1 && measurementCursorPosition) {
+      if (pending.type === 'distance') {
+        // Distance: show preview line from first point to cursor
+        sceneManagerRef.current.showDistancePreview(pending.points[0], measurementCursorPosition);
+      } else if (pending.type === 'area') {
+        // Area: show preview polygon with cursor as potential next point
+        sceneManagerRef.current.showAreaPreview(pending.points, measurementCursorPosition);
+      }
+    } else {
+      // Clear preview when no pending measurement or cursor not on surface
+      sceneManagerRef.current.clearMeasurementPreview();
+    }
+  }, [state.pendingMeasurement, measurementCursorPosition, isOrbiting]);
 
   // Transform mode change handler
   const handleTransformModeChange = useCallback((mode: TransformMode | null) => {
@@ -851,6 +925,18 @@ const ViewerContent = () => {
           }
           clearMeasurementPointSelection(); // Clear point editing
           break;
+        case 'a':
+          // A for area tool - also opens panel
+          if (state.activeTool === 'area') {
+            setActiveTool(null);
+            closeCollaborationPanel();
+          } else {
+            setActiveTool('area');
+            setTransformMode(null); // Hide gizmo for mutual exclusivity
+            openCollaborationPanel('measurements');
+          }
+          clearMeasurementPointSelection(); // Clear point editing
+          break;
         case 'v':
           // Ctrl+Shift+V for save current view
           if (event.ctrlKey && event.shiftKey) {
@@ -873,10 +959,32 @@ const ViewerContent = () => {
           // H for clean view toggle (hide/show all layers)
           toggleCleanView();
           break;
+        case 'enter':
+          // Enter to finalize area measurement (requires 3+ points)
+          if (state.pendingMeasurement?.type === 'area' && state.pendingMeasurement.points.length >= 3) {
+            const measurement = finalizeMeasurement(currentUserId);
+            sceneManagerRef.current?.clearMeasurementPreview();
+            setMeasurementCursorPosition(null);
+            persistMeasurement(measurement);
+          }
+          break;
         case 'delete':
-        case 'backspace':
           // Delete selected measurement or annotation (use refs to avoid TDZ)
           if (state.selectedMeasurementPoint) {
+            handleMeasurementDeleteRef.current?.(state.selectedMeasurementPoint.measurementId);
+            clearMeasurementPointSelection();
+          } else if (state.selectedAnnotationId) {
+            handleAnnotationDeleteRef.current?.(state.selectedAnnotationId);
+            selectAnnotation(null);
+          }
+          break;
+        case 'backspace':
+          // Backspace to undo last point when building a measurement
+          if (state.pendingMeasurement && state.pendingMeasurement.points.length > 0) {
+            undoLastMeasurementPoint();
+            event.preventDefault(); // Prevent browser navigation
+          } else if (state.selectedMeasurementPoint) {
+            // Delete selected measurement (use refs to avoid TDZ)
             handleMeasurementDeleteRef.current?.(state.selectedMeasurementPoint.measurementId);
             clearMeasurementPointSelection();
           } else if (state.selectedAnnotationId) {
@@ -888,6 +996,8 @@ const ViewerContent = () => {
           // Escape to cancel pending measurement, hide gizmo, clear point selection, collapse panel, or clear annotation selection
           if (state.pendingMeasurement) {
             cancelMeasurement();
+            sceneManagerRef.current?.clearMeasurementPreview();
+            setMeasurementCursorPosition(null);
           } else if (state.selectedMeasurementPoint) {
             clearMeasurementPointSelection();
             closeCollaborationPanel();
@@ -908,7 +1018,89 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel]);
+  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
+
+  // Right-click detection for area measurement confirm
+  // Pattern: Let OrbitControls pan, but detect quick taps on pointerup
+  // Quick tap (< 200ms, < 3px movement) = confirm measurement
+  // Hold/drag = pan camera (OrbitControls handles, pan was no-op on quick tap anyway)
+  useEffect(() => {
+    const container = viewerContainerRef.current;
+    if (!container) return;
+
+    // Track right-click gesture with local variables (no refs needed)
+    let rightClickStart: { time: number; x: number; y: number } | null = null;
+
+    const isAreaConfirmable = () =>
+      state.pendingMeasurement?.type === 'area' &&
+      state.pendingMeasurement.points.length >= 3;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      // Only track right-click when area is confirmable
+      if (event.button !== 2 || !isAreaConfirmable()) return;
+
+      // Record start position and time (don't block OrbitControls)
+      rightClickStart = {
+        time: Date.now(),
+        x: event.clientX,
+        y: event.clientY,
+      };
+    };
+
+    const handlePointerUp = async (event: PointerEvent) => {
+      // Only handle right-click
+      if (event.button !== 2 || !rightClickStart) return;
+
+      const start = rightClickStart;
+      rightClickStart = null;
+
+      // Check if this was a quick tap with minimal movement
+      if (!isAreaConfirmable()) return;
+
+      const duration = Date.now() - start.time;
+      const distance = Math.hypot(
+        event.clientX - start.x,
+        event.clientY - start.y
+      );
+
+      // Quick tap: confirm measurement
+      // OrbitControls' "pan" was a no-op since there was no movement
+      if (duration < RIGHT_CLICK_CONFIRM_MS && distance < RIGHT_CLICK_MOVE_THRESHOLD) {
+        const measurement = finalizeMeasurement(currentUserId);
+        sceneManagerRef.current?.clearMeasurementPreview();
+        setMeasurementCursorPosition(null);
+        await persistMeasurement(measurement);
+      }
+      // If user moved or held too long, they were panning - do nothing
+    };
+
+    // Attach to container (not capture phase - we're not blocking OrbitControls)
+    container.addEventListener('pointerdown', handlePointerDown);
+    container.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      container.removeEventListener('pointerdown', handlePointerDown);
+      container.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [state.pendingMeasurement, finalizeMeasurement, currentUserId, persistMeasurement]);
+
+  // Smart right-click: block context menu during placement tools
+  useEffect(() => {
+    const container = viewerContainerRef.current;
+    if (!container) return;
+
+    const handleContextMenu = (event: MouseEvent) => {
+      // Always prevent context menu when placement tool is active
+      const isPlacementTool = state.activeTool &&
+        ['distance', 'area', 'comment', 'pin', 'angle'].includes(state.activeTool);
+      if (isPlacementTool) {
+        event.preventDefault();
+      }
+    };
+
+    container.addEventListener('contextmenu', handleContextMenu);
+    return () => container.removeEventListener('contextmenu', handleContextMenu);
+  }, [state.activeTool]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -1105,12 +1297,9 @@ const ViewerContent = () => {
         <Viewer3D
           className="w-full h-full"
           scanId={scanId}
-          modelUrl={scan.modelUrl}
           splatUrl={scan.modelUrl}
           onPointSelect={handlePointSelect}
-          viewMode={state.viewMode}
           showGrid={state.showGrid}
-          activeTool={state.activeTool}
           onSceneReady={handleSceneReady}
           initialTransform={initialTransform}
           transformMode={transformMode}
@@ -1120,7 +1309,6 @@ const ViewerContent = () => {
           onAnnotationSelect={selectAnnotation}
           hoveredAnnotationId={state.hoveredAnnotationId}
           selectedAnnotationId={state.selectedAnnotationId}
-          annotations={state.annotations}
           onCameraReady={setCamera}
           measurements={state.measurements}
           selectedMeasurementPoint={state.selectedMeasurementPoint}
@@ -1148,29 +1336,27 @@ const ViewerContent = () => {
           magnifierCanvas={magnifierCanvasRef.current}
           onMousePositionUpdate={(x, y, visible) => setMagnifierPos({ x, y, visible })}
           splatViewMode={state.splatViewMode}
+          onMeasurementCursorUpdate={setMeasurementCursorPosition}
+          pendingMeasurementPointCount={state.pendingMeasurement?.points.length ?? 0}
+          onOrbitStart={() => setIsOrbiting(true)}
+          onOrbitEnd={() => setIsOrbiting(false)}
         />
 
         {/* HTML Annotation Icon Overlay - hidden in point cloud mode */}
         {state.showAnnotations && state.splatViewMode !== 'pointcloud' && <AnnotationIconOverlay
-          annotations={state.annotations.map(a => {
-            // Use fallback position for initial render, getWorldPosition provides live updates
-            const position = a.position instanceof THREE.Vector3
-              ? a.position
-              : new THREE.Vector3(a.position.x, a.position.y, a.position.z);
-            return {
-              data: {
-                id: a.id,
-                scanId: scanId || '',
-                type: a.type,
-                status: a.status,
-                content: a.content,
-                createdBy: a.createdBy,
-                createdAt: a.createdAt,
-                replyCount: a.replies?.length || 0,
-              } as AnnotationData,
-              position,
-            };
-          })}
+          annotations={state.annotations.map(a => ({
+            data: {
+              id: a.id,
+              scanId: scanId || '',
+              type: a.type,
+              status: a.status,
+              content: a.content,
+              createdBy: a.createdBy,
+              createdAt: a.createdAt,
+              replyCount: a.replies?.length || 0,
+            } as AnnotationData,
+            position: normalizeVector3(a.position),
+          }))}
           camera={camera}
           containerRef={viewerContainerRef}
           hoveredId={state.hoveredAnnotationId}
@@ -1185,18 +1371,27 @@ const ViewerContent = () => {
 
         {/* HTML Measurement Point Overlay - hidden in point cloud mode */}
         {state.showMeasurements && state.splatViewMode !== 'pointcloud' && <MeasurementIconOverlay
-          points={state.measurements.flatMap(m =>
-            m.points.map((p, i) => {
-              // Use fallback position for initial render, getWorldPosition provides live updates
-              const position = p instanceof THREE.Vector3 ? p : new THREE.Vector3(p.x, p.y, p.z);
-              return {
+          points={[
+            // Finalized measurement points
+            ...state.measurements.flatMap(m =>
+              m.points.map((p, i) => ({
                 measurementId: m.id,
                 pointIndex: i,
-                position,
+                position: normalizeVector3(p),
                 type: m.type as 'distance' | 'area' | 'angle',
-              } as MeasurementPointData;
-            })
-          )}
+              }) as MeasurementPointData)
+            ),
+            // Pending measurement points (during placement)
+            ...(state.pendingMeasurement?.points.map((p, i) => ({
+              measurementId: 'pending',
+              pointIndex: i,
+              position: normalizeVector3(p),
+              type: state.pendingMeasurement?.type as 'distance' | 'area' | 'angle',
+              isPending: true, // Flag for styling
+              // First point gets snap affordance when cursor is nearby
+              isSnapTarget: i === 0 && isNearFirstPoint,
+            })) ?? []),
+          ]}
           camera={camera}
           containerRef={viewerContainerRef}
           hoveredPointId={state.hoveredMeasurementId ? `${state.hoveredMeasurementId}-0` : null}
@@ -1227,6 +1422,7 @@ const ViewerContent = () => {
           visible={magnifierPos.visible}
           mouseX={magnifierPos.x}
           mouseY={magnifierPos.y}
+          loupeSize={100}
         />
       </div>
 

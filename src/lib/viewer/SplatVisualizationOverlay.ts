@@ -77,8 +77,8 @@ export class SplatVisualizationOverlay {
       pointIndex++;
     });
 
-    // Trim buffer to actual point count (skip unused trailing space)
-    const actualPositions = positions.subarray(0, pointIndex * 3);
+    // Trim buffer to actual point count (use slice to create a copy, not subarray which creates a view)
+    const actualPositions = positions.slice(0, pointIndex * 3);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(actualPositions, 3));

@@ -144,9 +144,14 @@ export function AxisNavigator({
     // Animation loop - REQUIRED for gizmo to render
     let animationFrameId: number;
     const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      gizmo.update(); // Sync orientation with camera
-      gizmo.render(); // Draw the gizmo
+      try {
+        gizmo.update(); // Sync orientation with camera
+        gizmo.render(); // Draw the gizmo
+        animationFrameId = requestAnimationFrame(animate);
+      } catch (error) {
+        console.error('AxisNavigator render error:', error);
+        cancelAnimationFrame(animationFrameId);
+      }
     };
     animate();
 

@@ -11,6 +11,10 @@ export interface MeasurementPointData {
   pointIndex: number;
   position: THREE.Vector3;
   type: MeasurementType;
+  /** Whether this is a pending point during measurement placement */
+  isPending?: boolean;
+  /** Whether this is the first point and cursor is near (for snap affordance) */
+  isSnapTarget?: boolean;
 }
 
 /**
@@ -37,6 +41,10 @@ interface MeasurementPointIconProps {
   isSelected?: boolean;
   /** Whether this point is being edited (gizmo attached) */
   isEditing?: boolean;
+  /** Whether this is a pending point (during measurement placement) */
+  isPending?: boolean;
+  /** Whether this is a snap target (cursor near first point of area) */
+  isSnapTarget?: boolean;
   /** Click handler */
   onClick?: (point: MeasurementPointData) => void;
   /** Hover handler */
@@ -72,6 +80,8 @@ export function MeasurementPointIcon({
   isHovered = false,
   isSelected = false,
   isEditing = false,
+  isPending = false,
+  isSnapTarget = false,
   onClick,
   onHover,
 }: MeasurementPointIconProps) {
@@ -118,7 +128,11 @@ export function MeasurementPointIcon({
           TYPE_COLORS[point.type],
           isHovered && 'scale-110 border-white/50',
           isSelected && 'scale-125 ring-2 ring-white/80',
-          isEditing && 'scale-150 ring-4 ring-yellow-400/80'
+          isEditing && 'scale-150 ring-4 ring-yellow-400/80',
+          // Pending point styles - dashed border and slightly smaller
+          isPending && 'border-dashed border-white/60 opacity-90',
+          // Snap target - subtle highlight without animation (no blinking)
+          isSnapTarget && 'ring-4 ring-green-400/90 scale-110 brightness-125'
         )}
         style={{
           width: scaledSize,
@@ -245,9 +259,10 @@ export function MeasurementIconOverlay({
             isHovered={hoveredPointId === pointId}
             isSelected={selectedPointId === pointId}
             isEditing={editingPointId === pointId}
+            isPending={point.isPending}
+            isSnapTarget={point.isSnapTarget}
             onClick={onPointClick}
             onHover={onPointHover}
-
           />
         );
       })}
