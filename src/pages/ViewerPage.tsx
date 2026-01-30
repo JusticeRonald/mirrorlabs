@@ -313,8 +313,9 @@ const ViewerContent = () => {
           isPreview: true,
         });
 
-        // Running total label for polylines with 2+ placed points
-        if (points.length >= 2) {
+        // Running total label for distance polylines with 2+ placed points
+        // (Area measurements don't show total during drawing - avoids confusing perimeter display)
+        if (points.length >= 2 && state.pendingMeasurement.type === 'distance') {
           // Calculate total so far (all placed segments + current segment to cursor)
           let totalDistance = 0;
           for (let i = 0; i < points.length - 1; i++) {
