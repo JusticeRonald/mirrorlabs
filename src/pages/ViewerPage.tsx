@@ -312,27 +312,6 @@ const ViewerContent = () => {
           type: 'distance',
           isPreview: true,
         });
-
-        // Running total label for distance polylines with 2+ placed points
-        // (Area measurements don't show total during drawing - avoids confusing perimeter display)
-        if (points.length >= 2 && state.pendingMeasurement.type === 'distance') {
-          // Calculate total so far (all placed segments + current segment to cursor)
-          let totalDistance = 0;
-          for (let i = 0; i < points.length - 1; i++) {
-            totalDistance += points[i].distanceTo(points[i + 1]);
-          }
-          totalDistance += lastPoint.distanceTo(cursorPoint);
-
-          // Position above the first segment midpoint
-          const firstMidpoint = MeasurementCalculator.calculateMidpoint(points[0], points[1]);
-          labels.push({
-            id: 'preview-total',
-            position: firstMidpoint.clone().add(new THREE.Vector3(0, 0.15, 0)),
-            value: `Total: ${MeasurementCalculator.formatDistance(totalDistance, unit as MeasurementUnit)}`,
-            type: 'distance',
-            isPreview: true,
-          });
-        }
       }
     }
 
