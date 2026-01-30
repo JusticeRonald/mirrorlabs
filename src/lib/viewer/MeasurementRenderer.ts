@@ -86,6 +86,7 @@ export class MeasurementRenderer {
   private previewAnimationId: number | null = null;
   private previewLine: Line2 | null = null;
   private previewLineMaterial: LineMaterial | null = null;
+  private previewAnimationRunning: boolean = false;
 
   // Debounce timer for resize handler
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -93,9 +94,17 @@ export class MeasurementRenderer {
   // Visibility state
   private visible: boolean = true;
 
+  // Segments hidden for drag (magnifier two-pass render)
+  // Tracks which segments are temporarily hidden during point drag
+  private hiddenDragSegments: Set<string> = new Set();
+
   // Per-segment line references for dashing control
   // Key format: `${measurementId}-${segmentIndex}`
   private segmentLines: Map<string, { outline: Line2; main: Line2 }> = new Map();
+
+  // Lock flag to prevent race conditions during transform operations
+  // When true, updateMeasurementPoint() calls should be ignored to prevent corruption
+  private isApplyingTransform: boolean = false;
 
   constructor(scene: THREE.Scene, config: Partial<MeasurementConfig> = {}) {
     this.scene = scene;
@@ -114,6 +123,11 @@ export class MeasurementRenderer {
   setParentObject(parent: THREE.Object3D | null): void {
     const newParent = parent ?? this.scene;
     if (newParent === this.parentObject) return;
+
+    // Clear hover/selected state to avoid stale references after re-parenting
+    this.hoveredId = null;
+    this.selectedId = null;
+
     const oldParent = this.parentObject;
 
     // Re-parent existing measurements, converting stored points between local spaces
@@ -186,6 +200,15 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Check if transform is being applied (for blocking point updates)
+   * Returns true during applyWorldTransform() execution to prevent race conditions
+   * where drag updates could corrupt coordinate systems during mode switching.
+   */
+  isTransformInProgress(): boolean {
+    return this.isApplyingTransform;
+  }
+
+  /**
    * Apply a world-space transform to all measurement positions.
    * Used when the parent mesh was transformed while measurements were scene-parented.
    * Call BEFORE setParentObject() when switching back from point cloud mode.
@@ -195,57 +218,64 @@ export class MeasurementRenderer {
   applyWorldTransform(deltaMatrix: THREE.Matrix4): void {
     // Only apply if currently parented to scene (world coords)
     if (this.parentObject !== this.scene) return;
+    // Prevent re-entry during transform
+    if (this.isApplyingTransform) return;
 
-    this.measurements.forEach((group) => {
-      const data = group.userData.data as MeasurementData;
-      if (data?.points) {
-        // Transform stored world-space points by the delta
-        data.points = data.points.map(p => p.clone().applyMatrix4(deltaMatrix));
+    this.isApplyingTransform = true;
+    try {
+      this.measurements.forEach((group) => {
+        const data = group.userData.data as MeasurementData;
+        if (data?.points) {
+          // Transform stored world-space points by the delta
+          data.points = data.points.map(p => p.clone().applyMatrix4(deltaMatrix));
 
-        // Rebuild geometry for each segment with updated points
-        const measurementId = data.id;
-        if (data.type === 'distance' && data.points.length >= 2) {
-          for (let i = 0; i < data.points.length - 1; i++) {
-            const p1 = data.points[i];
-            const p2 = data.points[i + 1];
-            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+          // Rebuild geometry for each segment with updated points
+          const measurementId = data.id;
+          if (data.type === 'distance' && data.points.length >= 2) {
+            for (let i = 0; i < data.points.length - 1; i++) {
+              const p1 = data.points[i];
+              const p2 = data.points[i + 1];
+              const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
 
-            const segment = this.segmentLines.get(`${measurementId}-${i}`);
-            if (segment) {
-              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
-              segment.outline.computeLineDistances();
-              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
-              segment.main.computeLineDistances();
-            }
-          }
-        } else if (data.type === 'area' && data.points.length >= 3) {
-          const n = data.points.length;
-          for (let i = 0; i < n; i++) {
-            const p1 = data.points[i];
-            const p2 = data.points[(i + 1) % n];
-            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
-
-            const segment = this.segmentLines.get(`${measurementId}-${i}`);
-            if (segment) {
-              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
-              segment.outline.computeLineDistances();
-              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
-              segment.main.computeLineDistances();
-            }
-          }
-          // Update fill mesh
-          group.traverse((child) => {
-            if (child instanceof THREE.Mesh && child.name === 'area-fill') {
-              const newFillGeometry = this.createPolygonGeometry(data.points);
-              if (newFillGeometry) {
-                child.geometry.dispose();
-                child.geometry = newFillGeometry;
+              const segment = this.segmentLines.get(`${measurementId}-${i}`);
+              if (segment) {
+                (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+                segment.outline.computeLineDistances();
+                (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+                segment.main.computeLineDistances();
               }
             }
-          });
+          } else if (data.type === 'area' && data.points.length >= 3) {
+            const n = data.points.length;
+            for (let i = 0; i < n; i++) {
+              const p1 = data.points[i];
+              const p2 = data.points[(i + 1) % n];
+              const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+              const segment = this.segmentLines.get(`${measurementId}-${i}`);
+              if (segment) {
+                (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+                segment.outline.computeLineDistances();
+                (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+                segment.main.computeLineDistances();
+              }
+            }
+            // Update fill mesh
+            group.traverse((child) => {
+              if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+                const newFillGeometry = this.createPolygonGeometry(data.points);
+                if (newFillGeometry) {
+                  child.geometry.dispose();
+                  child.geometry = newFillGeometry;
+                }
+              }
+            });
+          }
         }
-      }
-    });
+      });
+    } finally {
+      this.isApplyingTransform = false;
+    }
   }
 
   /**
@@ -262,6 +292,24 @@ export class MeasurementRenderer {
     // Convert from parent's local space to world space
     this.parentObject.localToWorld(worldPos);
     return worldPos;
+  }
+
+  /**
+   * Get all points for a measurement converted to world space.
+   * Used to sync ViewerContext state after transforms or before splits.
+   * This returns the current accurate world positions accounting for any
+   * parent object transforms (rotation/scale/translation).
+   */
+  getPointsInWorldSpace(id: string): THREE.Vector3[] | null {
+    const group = this.measurements.get(id);
+    if (!group) return null;
+
+    const data = group.userData.data as MeasurementData;
+    return data.points.map(p => {
+      const worldP = p.clone();
+      this.parentObject.localToWorld(worldP);
+      return worldP;
+    });
   }
 
   /**
@@ -398,14 +446,15 @@ export class MeasurementRenderer {
    * Creates a rapid pulsing effect with dashes flowing toward cursor
    */
   private startPreviewAnimation(): void {
-    if (this.previewAnimationId !== null) return;
+    if (this.previewAnimationRunning) return;
+    this.previewAnimationRunning = true;
 
     const CYCLE_DURATION_MS = 300; // 0.3 second cycle (very fast)
     const DASH_SPEED = -0.15; // Negative = flow toward cursor
 
     const animate = () => {
-      if (!this.previewLineMaterial) {
-        this.stopPreviewAnimation();
+      // Guard against stale RAF callbacks after animation stopped
+      if (!this.previewAnimationRunning || !this.previewLineMaterial) {
         return;
       }
 
@@ -430,6 +479,7 @@ export class MeasurementRenderer {
    * Stop the preview line animation
    */
   private stopPreviewAnimation(): void {
+    this.previewAnimationRunning = false;
     if (this.previewAnimationId !== null) {
       cancelAnimationFrame(this.previewAnimationId);
       this.previewAnimationId = null;
@@ -726,28 +776,11 @@ export class MeasurementRenderer {
   }
 
   /**
-   * Calculate the normal vector of a polygon using Newell's method
+   * Calculate the normal vector of a polygon.
+   * Delegates to MeasurementCalculator.calculatePlaneNormal (Newell's method).
    */
   private calculatePolygonNormal(points: THREE.Vector3[]): THREE.Vector3 {
-    const normal = new THREE.Vector3(0, 0, 0);
-
-    for (let i = 0; i < points.length; i++) {
-      const current = points[i];
-      const next = points[(i + 1) % points.length];
-
-      normal.x += (current.y - next.y) * (current.z + next.z);
-      normal.y += (current.z - next.z) * (current.x + next.x);
-      normal.z += (current.x - next.x) * (current.y + next.y);
-    }
-
-    normal.normalize();
-
-    // Default to Y-up if degenerate
-    if (normal.lengthSq() === 0) {
-      normal.set(0, 1, 0);
-    }
-
-    return normal;
+    return MeasurementCalculator.calculatePlaneNormal(points);
   }
 
   /**
@@ -1124,6 +1157,13 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Check if measurements are currently visible
+   */
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  /**
    * Temporarily hide/show preview for magnifier capture.
    * Used during two-pass rendering to exclude preview line from magnifier view.
    */
@@ -1139,6 +1179,72 @@ export class MeasurementRenderer {
    */
   hasActivePreview(): boolean {
     return this.previewGroup !== null;
+  }
+
+  /**
+   * Hide/show segments connected to a specific point (for magnifier two-pass rendering).
+   * When dragging a point, the adjacent segments should be hidden from the magnifier
+   * to allow precise placement on the splat surface.
+   *
+   * For point at index N:
+   * - Segment N-1 connects point[N-1] to point[N]
+   * - Segment N connects point[N] to point[N+1]
+   *
+   * @param measurementId The measurement ID
+   * @param pointIndex The point being dragged
+   * @param visible Whether to show or hide the segments
+   */
+  setSegmentsForPointVisible(measurementId: string, pointIndex: number, visible: boolean): void {
+    const group = this.measurements.get(measurementId);
+    if (!group) return;
+
+    const data = group.userData.data as MeasurementData;
+    const pointCount = data.points.length;
+
+    // Determine which segments to hide/show
+    const segmentsToToggle: number[] = [];
+
+    if (data.type === 'distance') {
+      // Distance polyline: segment indices go from 0 to pointCount-2
+      // Segment index follows the "from" point
+      if (pointIndex > 0) {
+        segmentsToToggle.push(pointIndex - 1); // Segment before the point
+      }
+      if (pointIndex < pointCount - 1) {
+        segmentsToToggle.push(pointIndex); // Segment after the point
+      }
+    } else if (data.type === 'area') {
+      // Area polygon: segment indices go from 0 to pointCount-1 (closed loop)
+      // Segment N connects point[N] to point[(N+1) % pointCount]
+      const prevSegment = (pointIndex - 1 + pointCount) % pointCount;
+      const nextSegment = pointIndex;
+      segmentsToToggle.push(prevSegment, nextSegment);
+    }
+
+    // Apply visibility to each segment
+    for (const segIdx of segmentsToToggle) {
+      const segmentKey = `${measurementId}-${segIdx}`;
+      const segment = this.segmentLines.get(segmentKey);
+      if (segment) {
+        segment.outline.visible = visible;
+        segment.main.visible = visible;
+
+        // Track hidden state
+        if (visible) {
+          this.hiddenDragSegments.delete(segmentKey);
+        } else {
+          this.hiddenDragSegments.add(segmentKey);
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if any segments are currently hidden for drag.
+   * Used to determine if two-pass rendering is needed.
+   */
+  hasHiddenDragSegments(): boolean {
+    return this.hiddenDragSegments.size > 0;
   }
 
   /**
@@ -1169,6 +1275,10 @@ export class MeasurementRenderer {
    * Note: newPosition is expected to be in world space
    */
   updateMeasurementPoint(id: string, pointIndex: number, newPosition: THREE.Vector3): void {
+    // Silently ignore updates during transform - prevents corruption from race condition
+    // when user drags point while applyWorldTransform() is processing
+    if (this.isApplyingTransform) return;
+
     const group = this.measurements.get(id);
     if (!group) return;
 
@@ -1283,6 +1393,9 @@ export class MeasurementRenderer {
    */
   dispose(): void {
     this.clear();
+    // Explicitly dispose preview resources (safety check for edge cases)
+    this.previewLine?.geometry?.dispose();
+    this.previewLineMaterial?.dispose();
     this.stopPreviewAnimation();
     window.removeEventListener('resize', this.handleResize);
     // Clear debounce timer

@@ -39,14 +39,14 @@ interface MeasurementPointIconProps {
   isHovered?: boolean;
   /** Whether this marker is selected */
   isSelected?: boolean;
-  /** Whether this point is being edited (gizmo attached) */
-  isEditing?: boolean;
+  /** Whether this point is being dragged */
+  isDragging?: boolean;
   /** Whether this is a pending point (during measurement placement) */
   isPending?: boolean;
   /** Whether this is a snap target (cursor near first point of area) */
   isSnapTarget?: boolean;
-  /** Click handler */
-  onClick?: (point: MeasurementPointData) => void;
+  /** Drag start handler (mousedown) */
+  onDragStart?: (point: MeasurementPointData, event: React.MouseEvent) => void;
   /** Hover handler */
   onHover?: (point: MeasurementPointData | null) => void;
 }
@@ -79,10 +79,10 @@ export function MeasurementPointIcon({
   containerHeight,
   isHovered = false,
   isSelected = false,
-  isEditing = false,
+  isDragging = false,
   isPending = false,
   isSnapTarget = false,
-  onClick,
+  onDragStart,
   onHover,
 }: MeasurementPointIconProps) {
   // Calculate screen position and size
@@ -115,20 +115,23 @@ export function MeasurementPointIcon({
   // Scale icon size inside based on container size
   const iconSize = Math.max(8, scaledSize * 0.5);
 
+  // Don't show drag cursor for pending points (they're being placed, not repositioned)
+  const cursorStyle = isPending ? 'default' : isDragging ? 'grabbing' : 'grab';
+
   return (
     <div
       className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
       style={{ left: screenX, top: screenY }}
     >
-      <button
+      <div
         className={cn(
           'rounded-full flex items-center justify-center',
           'shadow-md border-2 border-white/30',
           'transition-all duration-150',
           TYPE_COLORS[point.type],
-          isHovered && 'scale-110 border-white/50',
+          isHovered && !isDragging && 'scale-110 border-white/50',
           isSelected && 'scale-125 ring-2 ring-white/80',
-          isEditing && 'scale-150 ring-4 ring-yellow-400/80',
+          isDragging && 'scale-125 ring-2 ring-blue-400/80',
           // Pending point styles - dashed border and slightly smaller
           isPending && 'border-dashed border-white/60 opacity-90',
           // Snap target - subtle highlight without animation (no blinking)
@@ -137,11 +140,14 @@ export function MeasurementPointIcon({
         style={{
           width: scaledSize,
           height: scaledSize,
-          cursor: 'pointer',
+          cursor: cursorStyle,
         }}
-        onClick={(e) => {
+        onMouseDown={(e) => {
+          // Don't allow dragging pending points
+          if (isPending) return;
+          e.preventDefault();
           e.stopPropagation();
-          onClick?.(point);
+          onDragStart?.(point, e);
         }}
         onMouseEnter={() => onHover?.(point)}
         onMouseLeave={() => onHover?.(null)}
@@ -151,7 +157,7 @@ export function MeasurementPointIcon({
           className="text-white drop-shadow"
           style={{ width: iconSize, height: iconSize }}
         />
-      </button>
+      </div>
     </div>
   );
 }
@@ -167,10 +173,10 @@ interface MeasurementIconOverlayProps {
   hoveredPointId?: string | null;
   /** Currently selected point (measurementId-pointIndex) */
   selectedPointId?: string | null;
-  /** Point currently being edited with gizmo (measurementId-pointIndex) */
-  editingPointId?: string | null;
-  /** Click handler */
-  onPointClick?: (point: MeasurementPointData) => void;
+  /** Point currently being dragged (measurementId-pointIndex) */
+  draggingPointId?: string | null;
+  /** Drag start handler */
+  onPointDragStart?: (measurementId: string, pointIndex: number, event: React.MouseEvent) => void;
   /** Hover handler */
   onPointHover?: (point: MeasurementPointData | null) => void;
   /** Optional function to get live world position (for transform following) */
@@ -189,8 +195,8 @@ export function MeasurementIconOverlay({
   containerRef,
   hoveredPointId,
   selectedPointId,
-  editingPointId,
-  onPointClick,
+  draggingPointId,
+  onPointDragStart,
   onPointHover,
   getWorldPosition,
 }: MeasurementIconOverlayProps) {
@@ -258,10 +264,10 @@ export function MeasurementIconOverlay({
             containerHeight={dimensions.height}
             isHovered={hoveredPointId === pointId}
             isSelected={selectedPointId === pointId}
-            isEditing={editingPointId === pointId}
+            isDragging={draggingPointId === pointId}
             isPending={point.isPending}
             isSnapTarget={point.isSnapTarget}
-            onClick={onPointClick}
+            onDragStart={(p, e) => onPointDragStart?.(p.measurementId, p.pointIndex, e)}
             onHover={onPointHover}
           />
         );

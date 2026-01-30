@@ -35,6 +35,10 @@ export class SceneManager {
   // When switching back, we calculate the delta to adjust marker positions.
   private storedMeshMatrix: THREE.Matrix4 | null = null;
 
+  // Lock flag to prevent race conditions during view mode transitions
+  // When true, drag operations on measurement/annotation points should be blocked
+  private isTransitioningViewMode: boolean = false;
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.objects = new Map();
@@ -204,6 +208,15 @@ export class SceneManager {
   }
 
   /**
+   * Check if view mode transition is in progress (for blocking drag operations)
+   * Returns true during setSplatViewMode() execution to prevent race conditions
+   * where drag updates could corrupt coordinate systems during reparenting.
+   */
+  isViewModeTransitioning(): boolean {
+    return this.isTransitioningViewMode;
+  }
+
+  /**
    * Set the splat visualization mode ('model' or 'pointcloud')
    *
    * When switching to point cloud mode, markers are reparented to the scene
@@ -215,48 +228,63 @@ export class SceneManager {
    * 3. Apply delta to all marker positions before reparenting back to mesh
    */
   setSplatViewMode(mode: SplatViewMode): void {
-    this.splatRenderer?.setSplatViewMode(mode);
+    // Prevent re-entry during transition
+    if (this.isTransitioningViewMode) return;
 
-    const splatMesh = this.splatRenderer?.getMesh();
-    if (!splatMesh) return;
+    this.isTransitioningViewMode = true;
+    try {
+      this.splatRenderer?.setSplatViewMode(mode);
 
-    if (mode === 'pointcloud') {
-      // Hide markers in point cloud mode (UX: static markers are confusing during transforms)
-      this.measurementRenderer?.setVisible(false);
-      this.annotationRenderer?.setVisible(false);
+      const splatMesh = this.splatRenderer?.getMesh();
+      if (!splatMesh) return;
 
-      // Store current mesh transform before reparenting to scene
-      splatMesh.updateMatrixWorld(true);
-      this.storedMeshMatrix = splatMesh.matrixWorld.clone();
+      if (mode === 'pointcloud') {
+        // Hide markers in point cloud mode (UX: static markers are confusing during transforms)
+        this.measurementRenderer?.setVisible(false);
+        this.annotationRenderer?.setVisible(false);
 
-      // Reparent to scene (converts mesh-local → world coords)
-      this.measurementRenderer?.setParentObject(this.scene);
-      this.annotationRenderer?.setParentObject(this.scene);
-    } else {
-      // Switching back to model mode
-      if (this.storedMeshMatrix) {
-        // Calculate delta: how the mesh moved during point cloud mode
-        // deltaMatrix = currentMatrix × storedMatrix⁻¹
+        // Store current mesh transform before reparenting to scene
         splatMesh.updateMatrixWorld(true);
-        const currentMatrix = splatMesh.matrixWorld;
-        const inverseStored = this.storedMeshMatrix.clone().invert();
-        const deltaMatrix = new THREE.Matrix4().multiplyMatrices(currentMatrix, inverseStored);
+        this.storedMeshMatrix = splatMesh.matrixWorld.clone();
 
-        // Apply delta to all markers (adjusts their world positions)
-        // This must happen BEFORE setParentObject() reparents them
-        this.measurementRenderer?.applyWorldTransform(deltaMatrix);
-        this.annotationRenderer?.applyWorldTransform(deltaMatrix);
+        // Reparent to scene (converts mesh-local → world coords)
+        this.measurementRenderer?.setParentObject(this.scene);
+        this.annotationRenderer?.setParentObject(this.scene);
+      } else {
+        // Switching back to model mode
+        if (this.storedMeshMatrix) {
+          // Calculate delta: how the mesh moved during point cloud mode
+          // deltaMatrix = currentMatrix × storedMatrix⁻¹
+          splatMesh.updateMatrixWorld(true);
+          const currentMatrix = splatMesh.matrixWorld;
+          const inverseStored = this.storedMeshMatrix.clone();
+          // Check for singular matrix (determinant near zero) before inverting
+          if (Math.abs(inverseStored.determinant()) < 1e-10) {
+            console.warn('Cannot invert singular mesh matrix - skipping transform delta');
+            this.storedMeshMatrix = null;
+            return;
+          }
+          inverseStored.invert();
+          const deltaMatrix = new THREE.Matrix4().multiplyMatrices(currentMatrix, inverseStored);
 
-        this.storedMeshMatrix = null;
+          // Apply delta to all markers (adjusts their world positions)
+          // This must happen BEFORE setParentObject() reparents them
+          this.measurementRenderer?.applyWorldTransform(deltaMatrix);
+          this.annotationRenderer?.applyWorldTransform(deltaMatrix);
+
+          this.storedMeshMatrix = null;
+        }
+
+        // Reparent back to mesh (converts world → mesh-local coords)
+        this.measurementRenderer?.setParentObject(splatMesh);
+        this.annotationRenderer?.setParentObject(splatMesh);
+
+        // Show markers when returning to model mode (at correct updated positions)
+        this.measurementRenderer?.setVisible(true);
+        this.annotationRenderer?.setVisible(true);
       }
-
-      // Reparent back to mesh (converts world → mesh-local coords)
-      this.measurementRenderer?.setParentObject(splatMesh);
-      this.annotationRenderer?.setParentObject(splatMesh);
-
-      // Show markers when returning to model mode (at correct updated positions)
-      this.measurementRenderer?.setVisible(true);
-      this.annotationRenderer?.setVisible(true);
+    } finally {
+      this.isTransitioningViewMode = false;
     }
   }
 
@@ -556,6 +584,37 @@ export class SceneManager {
   }
 
   /**
+   * Show or hide all measurement geometry (lines, fills, previews).
+   * Used during magnifier two-pass rendering to exclude measurements from the magnifier view.
+   */
+  setMeasurementsVisible(visible: boolean): void {
+    this.measurementRenderer?.setVisible(visible);
+  }
+
+  /**
+   * Check if measurements are currently visible
+   */
+  areMeasurementsVisible(): boolean {
+    return this.measurementRenderer?.isVisible() ?? true;
+  }
+
+  /**
+   * Hide/show segments connected to a dragged point for magnifier two-pass rendering.
+   * When dragging a measurement point, adjacent segments should be hidden from magnifier.
+   */
+  setDraggedPointSegmentsVisible(measurementId: string, pointIndex: number, visible: boolean): void {
+    this.measurementRenderer?.setSegmentsForPointVisible(measurementId, pointIndex, visible);
+  }
+
+  /**
+   * Check if any segments are hidden for drag.
+   * Used to determine if two-pass rendering is needed for magnifier.
+   */
+  hasHiddenDragSegments(): boolean {
+    return this.measurementRenderer?.hasHiddenDragSegments() ?? false;
+  }
+
+  /**
    * Update a measurement point's position (for point editing with gizmo)
    */
   updateMeasurementPoint(id: string, pointIndex: number, newPosition: THREE.Vector3): void {
@@ -611,6 +670,15 @@ export class SceneManager {
    */
   getMeasurementPointWorldPosition(id: string, pointIndex: number): THREE.Vector3 | null {
     return this.measurementRenderer?.getPointWorldPosition(id, pointIndex) ?? null;
+  }
+
+  /**
+   * Get all measurement points in world space (for state sync before splits).
+   * Used to synchronize ViewerContext state with renderer's current positions
+   * after transforms have been applied to the parent object.
+   */
+  getMeasurementPointsInWorldSpace(id: string): THREE.Vector3[] | null {
+    return this.measurementRenderer?.getPointsInWorldSpace(id) ?? null;
   }
 
   /**

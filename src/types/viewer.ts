@@ -225,9 +225,9 @@ export interface PendingMeasurement {
 }
 
 /**
- * Selected measurement point for editing (shows gizmo at point location)
+ * Measurement point being dragged (for direct click-and-drag repositioning)
  */
-export interface SelectedMeasurementPoint {
+export interface DraggingMeasurementPoint {
   measurementId: string;
   pointIndex: number; // 0 = start, 1 = end (for distance), 0..n for area
 }
@@ -266,7 +266,9 @@ export interface ViewerState {
   selectedMeasurementId: string | null;
   hoveredMeasurementId: string | null;
   measurementUnit: MeasurementUnit;
-  selectedMeasurementPoint: SelectedMeasurementPoint | null;
+  draggingMeasurementPoint: DraggingMeasurementPoint | null;
+  /** Stores active tool before drag to restore after repositioning */
+  toolBeforeDrag: string | null;
 
   // Markup state
   activeMarkupTool: MarkupToolType;
@@ -337,7 +339,8 @@ export const defaultViewerState: ViewerState = {
   selectedMeasurementId: null,
   hoveredMeasurementId: null,
   measurementUnit: 'ft', // Default to feet (US construction standard)
-  selectedMeasurementPoint: null,
+  draggingMeasurementPoint: null,
+  toolBeforeDrag: null,
 
   // Markup state
   activeMarkupTool: null,

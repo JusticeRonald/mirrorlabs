@@ -122,9 +122,10 @@ const ViewerContent = () => {
     finalizeMeasurement,
     selectMeasurement,
     hoverMeasurement,
-    selectMeasurementPoint,
-    clearMeasurementPointSelection,
+    startDraggingMeasurementPoint,
+    stopDraggingMeasurementPoint,
     updateMeasurementPoint,
+    updateMeasurementPoints,
     removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,
@@ -907,6 +908,7 @@ const ViewerContent = () => {
     if (sceneManagerRef.current && initialTransform) {
       sceneManagerRef.current.setSplatTransform(initialTransform);
       setCurrentTransform(initialTransform);
+      setTransformVersion(v => v + 1); // Invalidate measurement label positions
     }
   }, [initialTransform]);
 
@@ -1097,19 +1099,16 @@ const ViewerContent = () => {
           // G for "grab" (translate/move) - Blender convention
           setTransformMode(transformMode === 'translate' ? null : 'translate');
           setActiveTool(null); // Clear tool for mutual exclusivity
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'r':
           // R for rotate - Blender convention
           setTransformMode(transformMode === 'rotate' ? null : 'rotate');
           setActiveTool(null); // Clear tool for mutual exclusivity
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 's':
           // S for scale - Blender convention
           setTransformMode(transformMode === 'scale' ? null : 'scale');
           setActiveTool(null); // Clear tool for mutual exclusivity
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'c':
           // C for comment tool - also opens panel
@@ -1121,7 +1120,6 @@ const ViewerContent = () => {
             setTransformMode(null); // Hide gizmo for mutual exclusivity
             openCollaborationPanel('annotations');
           }
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'd':
           // D for distance tool - also opens panel
@@ -1133,7 +1131,6 @@ const ViewerContent = () => {
             setTransformMode(null); // Hide gizmo for mutual exclusivity
             openCollaborationPanel('measurements');
           }
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'a':
           // A for area tool - also opens panel
@@ -1145,7 +1142,6 @@ const ViewerContent = () => {
             setTransformMode(null); // Hide gizmo for mutual exclusivity
             openCollaborationPanel('measurements');
           }
-          clearMeasurementPointSelection(); // Clear point editing
           break;
         case 'v':
           // Ctrl+Shift+V for save current view
@@ -1190,11 +1186,8 @@ const ViewerContent = () => {
           }
           break;
         case 'delete':
-          // Delete selected measurement or annotation (use refs to avoid TDZ)
-          if (state.selectedMeasurementPoint) {
-            handleMeasurementDeleteRef.current?.(state.selectedMeasurementPoint.measurementId);
-            clearMeasurementPointSelection();
-          } else if (state.selectedAnnotationId) {
+          // Delete selected annotation (measurements deleted via label X buttons)
+          if (state.selectedAnnotationId) {
             handleAnnotationDeleteRef.current?.(state.selectedAnnotationId);
             selectAnnotation(null);
           }
@@ -1204,24 +1197,17 @@ const ViewerContent = () => {
           if (state.pendingMeasurement && state.pendingMeasurement.points.length > 0) {
             undoLastMeasurementPoint();
             event.preventDefault(); // Prevent browser navigation
-          } else if (state.selectedMeasurementPoint) {
-            // Delete selected measurement (use refs to avoid TDZ)
-            handleMeasurementDeleteRef.current?.(state.selectedMeasurementPoint.measurementId);
-            clearMeasurementPointSelection();
           } else if (state.selectedAnnotationId) {
             handleAnnotationDeleteRef.current?.(state.selectedAnnotationId);
             selectAnnotation(null);
           }
           break;
         case 'escape':
-          // Escape to cancel pending measurement, hide gizmo, clear point selection, collapse panel, or clear annotation selection
+          // Escape to cancel pending measurement, hide gizmo, collapse panel, or clear annotation selection
           if (state.pendingMeasurement) {
             cancelMeasurement();
             sceneManagerRef.current?.clearMeasurementPreview();
             setMeasurementCursorPosition(null);
-          } else if (state.selectedMeasurementPoint) {
-            clearMeasurementPointSelection();
-            closeCollaborationPanel();
           } else if (state.selectedAnnotationId) {
             selectAnnotation(null);
             closeCollaborationPanel();
@@ -1239,7 +1225,7 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, state.splatViewMode, setActiveTool, setSplatViewMode, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
+  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedAnnotationId, state.isCollaborationPanelOpen, state.splatViewMode, setActiveTool, setSplatViewMode, cancelMeasurement, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
 
   // Right-click detection for measurement confirm (area and distance polylines)
   // Pattern: Let OrbitControls pan, but detect quick taps on pointerup
@@ -1326,6 +1312,19 @@ const ViewerContent = () => {
     container.addEventListener('contextmenu', handleContextMenu);
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [state.activeTool]);
+
+  // Handle measurement point drag end (pointerup anywhere in window)
+  useEffect(() => {
+    if (!state.draggingMeasurementPoint) return;
+
+    const handlePointerUp = () => {
+      stopDraggingMeasurementPoint();
+    };
+
+    // Listen on window to catch release even if cursor leaves the viewer
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => window.removeEventListener('pointerup', handlePointerUp);
+  }, [state.draggingMeasurementPoint, stopDraggingMeasurementPoint]);
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -1452,8 +1451,10 @@ const ViewerContent = () => {
 
   // Handle measurement deletion with Supabase persistence
   const handleMeasurementDelete = useCallback(async (measurementId: string) => {
-    // Clear selection so gizmo disappears immediately
-    clearMeasurementPointSelection();
+    // Stop any active drag on this measurement
+    if (state.draggingMeasurementPoint?.measurementId === measurementId) {
+      stopDraggingMeasurementPoint();
+    }
 
     // Remove from local state immediately
     removeMeasurement(measurementId);
@@ -1466,7 +1467,7 @@ const ViewerContent = () => {
         // Error deleting measurement - already removed locally
       }
     }
-  }, [removeMeasurement, clearMeasurementPointSelection]);
+  }, [removeMeasurement, state.draggingMeasurementPoint, stopDraggingMeasurementPoint]);
   handleMeasurementDeleteRef.current = handleMeasurementDelete;
 
   // Handle measurement label delete (segments or entire measurement)
@@ -1474,6 +1475,11 @@ const ViewerContent = () => {
   // - 2-point line: deleting the only segment removes entire measurement
   // - First/last segment: truncates the measurement
   // - Middle segment: splits into two separate measurements
+  //
+  // IMPORTANT: Before split/truncate, we sync ViewerContext state with the renderer's
+  // current world positions. This fixes the offset bug when the model has been transformed
+  // (rotated/scaled) - the renderer stores points in LOCAL space which gets correctly
+  // converted to WORLD space, ensuring splits use the correct coordinates.
   const handleLabelDelete = useCallback(async (label: MeasurementLabelData) => {
     // Clear hover state immediately
     setHoveredLabelId(null);
@@ -1484,6 +1490,20 @@ const ViewerContent = () => {
       // Area centroid or distance total label - delete entire measurement
       await handleMeasurementDelete(label.measurementId);
     } else if (label.type === 'segment' && label.segmentIndex !== undefined) {
+      const sceneManager = sceneManagerRef.current;
+      const measurement = state.measurements.find(m => m.id === label.measurementId);
+
+      // Get CURRENT world positions from renderer (accounts for model transforms)
+      // This syncs state with the renderer's accurate positions before the split
+      if (sceneManager && measurement) {
+        const currentWorldPoints = sceneManager.getMeasurementPointsInWorldSpace(label.measurementId);
+        if (currentWorldPoints && currentWorldPoints.length >= 2) {
+          // Sync state points with renderer's current world positions FIRST
+          // This ensures removeSegmentFromMeasurement uses correct coordinates
+          updateMeasurementPoints(label.measurementId, currentWorldPoints);
+        }
+      }
+
       // Segment label - handle based on action type
       const result = removeSegmentFromMeasurement(label.measurementId, label.segmentIndex);
 
@@ -1533,7 +1553,7 @@ const ViewerContent = () => {
         // Error persisting to Supabase - local state already updated
       }
     }
-  }, [handleMeasurementDelete, removeSegmentFromMeasurement, scanId]);
+  }, [handleMeasurementDelete, removeSegmentFromMeasurement, scanId, state.measurements, updateMeasurementPoints]);
 
   // Handle annotation reply with Supabase persistence
   const handleAnnotationReply = useCallback(async (annotationId: string, content: string) => {
@@ -1559,9 +1579,23 @@ const ViewerContent = () => {
     setShowSharePanel(true);
   }, []);
 
-  // Handle annotation move (click-to-relocate or gizmo drag)
-  const handleAnnotationMove = useCallback((annotationId: string, position: THREE.Vector3) => {
+  // Handle annotation move (gizmo drag)
+  const handleAnnotationMove = useCallback(async (annotationId: string, position: THREE.Vector3) => {
+    // Update local state immediately for responsiveness
     updateAnnotationPosition(annotationId, position);
+
+    // Persist to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await updateAnnotationService(annotationId, {
+          position_x: position.x,
+          position_y: position.y,
+          position_z: position.z,
+        });
+      } catch {
+        // Position updated locally - will sync on reload
+      }
+    }
   }, [updateAnnotationPosition]);
 
   // Show loading state while fetching data
@@ -1602,11 +1636,14 @@ const ViewerContent = () => {
           selectedAnnotationId={state.selectedAnnotationId}
           onCameraReady={setCamera}
           measurements={state.measurements}
-          selectedMeasurementPoint={state.selectedMeasurementPoint}
+          draggingMeasurementPoint={state.draggingMeasurementPoint}
+          onMeasurementPointDragStart={(measurementId, pointIndex) => {
+            startDraggingMeasurementPoint(measurementId, pointIndex);
+          }}
           onMeasurementPointMove={(measurementId, pointIndex, newPosition) => {
             updateMeasurementPoint(measurementId, pointIndex, newPosition);
           }}
-          onMeasurementPointDeselect={clearMeasurementPointSelection}
+          onMeasurementPointDragEnd={stopDraggingMeasurementPoint}
           onAnnotationMove={handleAnnotationMove}
           onSplatLoadStart={() => {
             setIsLoading(true);
@@ -1686,18 +1723,17 @@ const ViewerContent = () => {
           camera={camera}
           containerRef={viewerContainerRef}
           hoveredPointId={state.hoveredMeasurementId ? `${state.hoveredMeasurementId}-0` : null}
-          selectedPointId={state.selectedMeasurementPoint
-            ? `${state.selectedMeasurementPoint.measurementId}-${state.selectedMeasurementPoint.pointIndex}`
+          selectedPointId={state.selectedMeasurementId
+            ? `${state.selectedMeasurementId}-0`
             : null
           }
-          editingPointId={state.selectedMeasurementPoint
-            ? `${state.selectedMeasurementPoint.measurementId}-${state.selectedMeasurementPoint.pointIndex}`
+          draggingPointId={state.draggingMeasurementPoint
+            ? `${state.draggingMeasurementPoint.measurementId}-${state.draggingMeasurementPoint.pointIndex}`
             : null
           }
-          onPointClick={(point) => {
-            // Select the measurement point for editing (shows gizmo)
-            // selectMeasurementPoint now clears activeTool + annotation selection internally
-            selectMeasurementPoint(point.measurementId, point.pointIndex);
+          onPointDragStart={(measurementId, pointIndex) => {
+            // Start dragging the measurement point
+            startDraggingMeasurementPoint(measurementId, pointIndex);
             // Open collaboration panel to measurements tab
             openCollaborationPanel('measurements');
           }}

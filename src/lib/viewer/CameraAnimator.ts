@@ -91,6 +91,19 @@ export class CameraAnimator {
    * Fly to a target position looking at a point
    */
   flyTo(target: CameraState, options: AnimationOptions = {}): Promise<void> {
+    // Cancel any existing animation FIRST to prevent race conditions
+    // where old RAF callbacks execute with new state
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    // Resolve old promise if animation was in progress
+    if (this.isAnimating && this.onCompleteCallback) {
+      this.onCompleteCallback();
+      this.onCompleteCallback = undefined;
+    }
+    this.isAnimating = false;
+
     return new Promise((resolve) => {
       const opts = { ...DEFAULT_ANIMATION_OPTIONS, ...options };
 

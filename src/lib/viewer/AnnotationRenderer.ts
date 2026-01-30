@@ -87,31 +87,21 @@ export class AnnotationRenderer {
   private markers: Map<string, THREE.Group>;
   private config: MarkerConfig;
 
-  // Shared geometries for performance
-  private sphereGeometry: THREE.SphereGeometry;
-  private coneGeometry: THREE.ConeGeometry;
+  // Note: Shared geometries (sphereGeometry, coneGeometry) removed - markers are now
+  // empty groups with HTML overlays handling all visual rendering (AnnotationIconOverlay)
 
   // Current state
   private hoveredId: string | null = null;
   private selectedId: string | null = null;
+
+  // Lock flag to prevent race conditions during transform operations
+  private isApplyingTransform: boolean = false;
 
   constructor(scene: THREE.Scene, config: Partial<MarkerConfig> = {}) {
     this.scene = scene;
     this.parentObject = scene; // Default to scene
     this.markers = new Map();
     this.config = { ...DEFAULT_MARKER_CONFIG, ...config };
-
-    // Create shared geometries
-    this.sphereGeometry = new THREE.SphereGeometry(
-      this.config.sphereRadius,
-      16,
-      12
-    );
-    this.coneGeometry = new THREE.ConeGeometry(
-      this.config.coneRadius,
-      this.config.coneHeight,
-      8
-    );
   }
 
   /**
@@ -121,6 +111,10 @@ export class AnnotationRenderer {
   setParentObject(parent: THREE.Object3D | null): void {
     const newParent = parent ?? this.scene;
     if (newParent === this.parentObject) return;
+
+    // Clear hover/selected state to avoid stale references after re-parenting
+    this.hoveredId = null;
+    this.selectedId = null;
 
     // Re-parent existing markers, preserving world positions
     this.markers.forEach((marker) => {
@@ -143,6 +137,14 @@ export class AnnotationRenderer {
   }
 
   /**
+   * Check if transform is being applied (for blocking position updates)
+   * Returns true during applyWorldTransform() execution to prevent race conditions.
+   */
+  isTransformInProgress(): boolean {
+    return this.isApplyingTransform;
+  }
+
+  /**
    * Apply a world-space transform to all annotation positions.
    * Used when the parent mesh was transformed while annotations were scene-parented.
    * Call BEFORE setParentObject() when switching back from point cloud mode.
@@ -152,11 +154,18 @@ export class AnnotationRenderer {
   applyWorldTransform(deltaMatrix: THREE.Matrix4): void {
     // Only apply if currently parented to scene (world coords)
     if (this.parentObject !== this.scene) return;
+    // Prevent re-entry during transform
+    if (this.isApplyingTransform) return;
 
-    this.markers.forEach((marker) => {
-      // marker.position is in world coords when parented to scene
-      marker.position.applyMatrix4(deltaMatrix);
-    });
+    this.isApplyingTransform = true;
+    try {
+      this.markers.forEach((marker) => {
+        // marker.position is in world coords when parented to scene
+        marker.position.applyMatrix4(deltaMatrix);
+      });
+    } finally {
+      this.isApplyingTransform = false;
+    }
   }
 
   /**
@@ -258,14 +267,20 @@ export class AnnotationRenderer {
 
   /**
    * Update marker color (for status changes)
+   *
+   * NOTE: This method is currently unused because markers are empty groups
+   * (3D geometry was removed in favor of HTML overlays - see AnnotationIconOverlay).
+   * The method is retained for backwards compatibility if 3D markers are re-added.
    */
-  private updateMarkerColor(marker: THREE.Group, color: number): void {
+  private updateMarkerColor(marker: THREE.Group, _color: number): void {
+    // Currently a no-op: markers are empty groups (HTML overlay handles rendering)
+    // If 3D marker meshes are re-added, this would update their material colors:
     marker.traverse((child) => {
       if (child instanceof THREE.Mesh && child.name !== 'reply-badge') {
         const material = child.material as THREE.MeshStandardMaterial;
-        material.color.setHex(color);
+        material.color.setHex(_color);
         if (material.emissive) {
-          material.emissive.setHex(color);
+          material.emissive.setHex(_color);
         }
       }
     });
@@ -281,13 +296,10 @@ export class AnnotationRenderer {
     // Remove from parent object
     this.parentObject.remove(marker);
 
-    // Dispose of geometries and materials
+    // Dispose of geometries and materials (if any exist in future implementations)
     marker.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        // Don't dispose shared geometries
-        if (child.geometry !== this.sphereGeometry && child.geometry !== this.coneGeometry) {
-          child.geometry?.dispose();
-        }
+        child.geometry?.dispose();
         if (child.material instanceof THREE.Material) {
           child.material.dispose();
         }
@@ -481,8 +493,6 @@ export class AnnotationRenderer {
    */
   dispose(): void {
     this.clear();
-    this.sphereGeometry.dispose();
-    this.coneGeometry.dispose();
   }
 }
 

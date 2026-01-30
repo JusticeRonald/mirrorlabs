@@ -32,6 +32,10 @@ export class RotationGizmoFeedback {
 
   private arcRadius = 0.75;  // Dynamic, set by gizmo size
 
+  // Reusable canvas for label sprites (avoids DOM allocation on every update)
+  private labelCanvas: HTMLCanvasElement | null = null;
+  private labelCtx: CanvasRenderingContext2D | null = null;
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
@@ -305,13 +309,20 @@ export class RotationGizmoFeedback {
 
   /**
    * Create a canvas-based sprite for the angle label
-   * Uses 2x resolution canvas with 0.5x sprite scale for sharp text
+   * Uses 2x resolution canvas with 0.5x sprite scale for sharp text.
+   * Reuses a single canvas instance to avoid DOM allocation on every frame.
    */
   private createLabelSprite(angleDegrees: number): THREE.Sprite {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;  // 2x resolution for sharper text
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d')!;
+    // Reuse canvas instead of creating new one each frame
+    if (!this.labelCanvas) {
+      this.labelCanvas = document.createElement('canvas');
+      this.labelCanvas.width = 256;  // 2x resolution for sharper text
+      this.labelCanvas.height = 128;
+      this.labelCtx = this.labelCanvas.getContext('2d');
+    }
+
+    const canvas = this.labelCanvas;
+    const ctx = this.labelCtx!;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -389,5 +400,9 @@ export class RotationGizmoFeedback {
       this.scene.remove(this.arcGroup);
       this.arcGroup = null;
     }
+
+    // Release canvas references (allow GC when feedback is disposed)
+    this.labelCanvas = null;
+    this.labelCtx = null;
   }
 }

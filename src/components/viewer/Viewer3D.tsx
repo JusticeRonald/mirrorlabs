@@ -9,7 +9,7 @@ import { CameraAnimator } from '@/lib/viewer/CameraAnimator';
 import { MagnifierUpdater } from '@/lib/viewer/MagnifierUpdater';
 import { CURSOR_GIZMO_DRAG, CURSOR_PLACEMENT } from '@/lib/viewer/cursors';
 import { useViewer } from '@/contexts/ViewerContext';
-import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Measurement, SelectedMeasurementPoint, SplatViewMode } from '@/types/viewer';
+import type { SplatLoadProgress, SplatSceneMetadata, SplatOrientation, SplatTransform, TransformMode, TransformAxis, Measurement, SplatViewMode } from '@/types/viewer';
 
 interface Viewer3DProps {
   className?: string;
@@ -45,12 +45,14 @@ interface Viewer3DProps {
   onCameraReady?: (camera: THREE.PerspectiveCamera) => void;
   /** Measurements for point editing */
   measurements?: Measurement[];
-  /** Currently selected measurement point for editing */
-  selectedMeasurementPoint?: SelectedMeasurementPoint | null;
-  /** Callback when a measurement point is moved via gizmo */
+  /** Point currently being dragged (for continuous raycasting) */
+  draggingMeasurementPoint?: { measurementId: string; pointIndex: number } | null;
+  /** Callback when a measurement point drag starts */
+  onMeasurementPointDragStart?: (measurementId: string, pointIndex: number) => void;
+  /** Callback when a measurement point is moved via drag */
   onMeasurementPointMove?: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
-  /** Callback to deselect the currently selected measurement point */
-  onMeasurementPointDeselect?: () => void;
+  /** Callback when a measurement point drag ends */
+  onMeasurementPointDragEnd?: () => void;
   /** Callback when annotation is moved via gizmo */
   onAnnotationMove?: (annotationId: string, position: THREE.Vector3) => void;
   /** Callback to expose the CameraAnimator to parent for saved views fly-to */
@@ -100,9 +102,10 @@ const Viewer3D = ({
   selectedAnnotationId,
   onCameraReady,
   measurements,
-  selectedMeasurementPoint,
+  draggingMeasurementPoint,
+  onMeasurementPointDragStart,
   onMeasurementPointMove,
-  onMeasurementPointDeselect,
+  onMeasurementPointDragEnd,
   onAnnotationMove,
   onCameraAnimatorReady,
   onCameraQuaternionUpdate,
@@ -134,8 +137,6 @@ const Viewer3D = ({
   const isSplatLoadingRef = useRef<boolean>(false);
   const rotationFeedbackRef = useRef<RotationGizmoFeedback | null>(null);
   const cameraAnimatorRef = useRef<CameraAnimator | null>(null);
-  // Helper object for measurement point gizmo attachment
-  const measurementPointHelperRef = useRef<THREE.Object3D | null>(null);
   // Helper object for annotation gizmo attachment
   const annotationHelperRef = useRef<THREE.Object3D | null>(null);
   // Store removed gizmo elements (E/XYZE circles) to restore when leaving rotate mode
@@ -146,6 +147,8 @@ const Viewer3D = ({
   const gizmoDraggingRef = useRef(false);
   // Magnifier loupe updater (canvas crop logic in render loop)
   const magnifierUpdaterRef = useRef<MagnifierUpdater | null>(null);
+  // Ref for draggingMeasurementPoint to avoid recreating handleMouseMove callback
+  const draggingMeasurementPointRef = useRef(draggingMeasurementPoint);
 
   // Store callbacks and values in refs to avoid effect re-runs when parent re-renders
   const onSplatLoadStartRef = useRef(onSplatLoadStart);
@@ -161,8 +164,9 @@ const Viewer3D = ({
   const activeToolRef = useRef(state.activeTool);
   const onPointSelectRef = useRef(onPointSelect);
   const onCameraReadyRef = useRef(onCameraReady);
+  const onMeasurementPointDragStartRef = useRef(onMeasurementPointDragStart);
   const onMeasurementPointMoveRef = useRef(onMeasurementPointMove);
-  const onMeasurementPointDeselectRef = useRef(onMeasurementPointDeselect);
+  const onMeasurementPointDragEndRef = useRef(onMeasurementPointDragEnd);
   const onAnnotationMoveRef = useRef(onAnnotationMove);
   const onCameraAnimatorReadyRef = useRef(onCameraAnimatorReady);
   const onCameraQuaternionUpdateRef = useRef(onCameraQuaternionUpdate);
@@ -193,8 +197,9 @@ const Viewer3D = ({
     onAnnotationSelectRef.current = onAnnotationSelect;
     onPointSelectRef.current = onPointSelect;
     onCameraReadyRef.current = onCameraReady;
+    onMeasurementPointDragStartRef.current = onMeasurementPointDragStart;
     onMeasurementPointMoveRef.current = onMeasurementPointMove;
-    onMeasurementPointDeselectRef.current = onMeasurementPointDeselect;
+    onMeasurementPointDragEndRef.current = onMeasurementPointDragEnd;
     onAnnotationMoveRef.current = onAnnotationMove;
     onCameraAnimatorReadyRef.current = onCameraAnimatorReady;
     onCameraQuaternionUpdateRef.current = onCameraQuaternionUpdate;
@@ -206,6 +211,7 @@ const Viewer3D = ({
     onOrbitStartRef.current = onOrbitStart;
     onOrbitEndRef.current = onOrbitEnd;
     transformModeRef.current = transformMode;
+    draggingMeasurementPointRef.current = draggingMeasurementPoint;
   });
 
   // Update activeTool ref SYNCHRONOUSLY before paint to prevent stale closure reads
@@ -295,6 +301,35 @@ const Viewer3D = ({
       -((event.clientY - rect.top) / rect.height) * 2 + 1
     );
 
+    // Handle measurement point dragging with continuous raycasting
+    // Use ref to avoid recreating callback when drag state changes (which would destroy scene)
+    const currentDragPoint = draggingMeasurementPointRef.current;
+    if (currentDragPoint) {
+      // Skip drag updates during view mode transition to prevent race condition
+      // where coordinate transforms could corrupt measurement point positions
+      if (sceneManagerRef.current.isViewModeTransitioning()) {
+        return;
+      }
+      const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
+      if (pickResult) {
+        const newPosition = pickResult.position.clone();
+        // Update via callback
+        onMeasurementPointMoveRef.current?.(
+          currentDragPoint.measurementId,
+          currentDragPoint.pointIndex,
+          newPosition
+        );
+        // Also update SceneManager renderer directly for smooth visual feedback
+        sceneManagerRef.current.updateMeasurementPoint(
+          currentDragPoint.measurementId,
+          currentDragPoint.pointIndex,
+          newPosition
+        );
+      }
+      // Don't process other interactions while dragging
+      return;
+    }
+
     // Check if hovering over an annotation marker
     const annotationId = sceneManagerRef.current.pickAnnotation(cameraRef.current, pointer);
     onAnnotationHoverRef.current?.(annotationId);
@@ -329,7 +364,7 @@ const Viewer3D = ({
         containerRef.current.style.cursor = 'default';
       }
     }
-  }, []);
+  }, []); // Empty deps - uses refs to avoid recreating callback and destroying scene
 
   // Update grid visibility (includes axis lines)
   useEffect(() => {
@@ -469,12 +504,14 @@ const Viewer3D = ({
     onControlsReadyRef.current?.(controls);
 
     // Orbit state callbacks (for freezing preview during camera drag)
-    controls.addEventListener('start', () => {
+    const handleOrbitStart = () => {
       onOrbitStartRef.current?.();
-    });
-    controls.addEventListener('end', () => {
+    };
+    const handleOrbitEnd = () => {
       onOrbitEndRef.current?.();
-    });
+    };
+    controls.addEventListener('start', handleOrbitStart);
+    controls.addEventListener('end', handleOrbitEnd);
 
     // Transform Controls (for gizmo manipulation)
     const transformControls = new TransformControls(camera, renderer.domElement);
@@ -496,7 +533,7 @@ const Viewer3D = ({
     magnifierUpdaterRef.current = magnifierUpdater;
 
     // Disable OrbitControls while dragging the gizmo
-    transformControls.addEventListener('dragging-changed', (event: { value: boolean }) => {
+    const handleDraggingChanged = (event: { value: boolean }) => {
       controls.enabled = !event.value;
       gizmoDraggingRef.current = event.value;
 
@@ -517,10 +554,11 @@ const Viewer3D = ({
         // End rotation feedback
         rotationFeedbackRef.current?.endRotation();
       }
-    });
+    };
+    transformControls.addEventListener('dragging-changed', handleDraggingChanged);
 
     // Emit transform changes when gizmo is manipulated
-    transformControls.addEventListener('objectChange', () => {
+    const handleObjectChange = () => {
       const sceneManager = sceneManagerRef.current;
       if (sceneManager) {
         const transform = sceneManager.getSplatTransform();
@@ -537,7 +575,8 @@ const Viewer3D = ({
           }
         }
       }
-    });
+    };
+    transformControls.addEventListener('objectChange', handleObjectChange);
 
     // Shift key snapping for precise transforms (Unreal Engine style)
     let isShiftPressed = false;
@@ -666,19 +705,24 @@ const Viewer3D = ({
       }
 
       const magnifier = magnifierUpdaterRef.current;
-      const hasPreview = sceneManager.hasMeasurementPreview();
 
-      if (magnifier?.enabled && hasPreview) {
-        // Two-pass render: clean for magnifier, then with preview
-        // This excludes the preview line from magnifier view for precise point placement
-        sceneManager.setMeasurementPreviewVisible(false);
+      // Two-pass rendering: hide ALL measurements from magnifier for clean splat surface view
+      if (magnifier?.enabled) {
+        // Store current visibility to restore after magnifier capture
+        const wasVisible = sceneManager.areMeasurementsVisible();
+
+        // Hide all measurement geometry for magnifier capture
+        sceneManager.setMeasurementsVisible(false);
+
         renderer.render(scene, camera);
         magnifier.update(renderer.domElement);
 
-        sceneManager.setMeasurementPreviewVisible(true);
+        // Restore measurement visibility to previous state
+        sceneManager.setMeasurementsVisible(wasVisible);
+
         renderer.render(scene, camera);
       } else {
-        // Single render
+        // Single render when magnifier disabled
         renderer.render(scene, camera);
         magnifier?.update(renderer.domElement);
       }
@@ -712,6 +756,11 @@ const Viewer3D = ({
 
     // Pointerleave handler to hide magnifier when mouse exits canvas
     const handlePointerLeave = () => {
+      // Don't hide magnifier during measurement point drag
+      // (DOM changes like panel opening can trigger pointerleave)
+      if (draggingMeasurementPointRef.current) {
+        return;
+      }
       onMousePositionUpdateRef.current?.(0, 0, false);
     };
     renderer.domElement.addEventListener('pointerleave', handlePointerLeave);
@@ -726,7 +775,13 @@ const Viewer3D = ({
       window.removeEventListener('keyup', handleKeyUp);
       renderer.domElement.removeEventListener('click', handleClick);
       cancelAnimationFrame(animationFrameId);
+      // Remove OrbitControls listeners before dispose
+      controls.removeEventListener('start', handleOrbitStart);
+      controls.removeEventListener('end', handleOrbitEnd);
       controls.dispose();
+      // Remove TransformControls listeners before dispose
+      transformControls.removeEventListener('dragging-changed', handleDraggingChanged);
+      transformControls.removeEventListener('objectChange', handleObjectChange);
       transformControls.dispose();
       rotationFeedback.dispose();
       cameraAnimator.dispose();
@@ -871,116 +926,7 @@ const Viewer3D = ({
     }
   }, [transformMode]);
 
-  // Measurement point gizmo effect - attaches TransformControls when a point is selected
-  useEffect(() => {
-    const transformControls = transformControlsRef.current;
-    const scene = sceneRef.current;
-    const sceneManager = sceneManagerRef.current;
-
-    if (!transformControls || !scene || !sceneManager) return;
-
-    // Clean up existing helper
-    if (measurementPointHelperRef.current) {
-      transformControls.detach();
-      scene.remove(measurementPointHelperRef.current);
-      measurementPointHelperRef.current = null;
-    }
-
-    if (selectedMeasurementPoint) {
-      // Get world position from SceneManager (handles LOCAL→WORLD conversion correctly)
-      const worldPos = sceneManager.getMeasurementPointWorldPosition(
-        selectedMeasurementPoint.measurementId,
-        selectedMeasurementPoint.pointIndex
-      );
-      if (!worldPos) return;
-
-      // Create helper at world position
-      const helper = new THREE.Object3D();
-      helper.position.copy(worldPos);
-      scene.add(helper);
-      measurementPointHelperRef.current = helper;
-
-      // Attach gizmo in translate mode
-      transformControls.attach(helper);
-      transformControls.setMode('translate');
-      transformControls.enabled = true;
-      transformControls.visible = true;
-      transformControls.getHelper().visible = true;
-
-      // Handle gizmo movement - pass WORLD position (renderers handle conversion internally)
-      const handleChange = () => {
-        if (measurementPointHelperRef.current && selectedMeasurementPoint) {
-          const newWorldPos = measurementPointHelperRef.current.position.clone();
-          // Update both ViewerContext (via callback) and SceneManager renderer
-          // Both expect WORLD positions and handle conversion internally
-          onMeasurementPointMoveRef.current?.(
-            selectedMeasurementPoint.measurementId,
-            selectedMeasurementPoint.pointIndex,
-            newWorldPos
-          );
-          sceneManager.updateMeasurementPoint(
-            selectedMeasurementPoint.measurementId,
-            selectedMeasurementPoint.pointIndex,
-            newWorldPos
-          );
-        }
-      };
-
-      // Disable orbit controls during any gizmo interaction (prevents camera fight)
-      const handleObjectChange = () => {
-        if (controlsRef.current) {
-          controlsRef.current.enabled = false;
-        }
-        handleChange();
-      };
-
-      // On drag END, snap to nearest surface (avoids jitter during drag)
-      const handleDragEnd = () => {
-        if (measurementPointHelperRef.current && selectedMeasurementPoint && cameraRef.current) {
-          const snapped = sceneManager.snapPositionToSplatSurface(
-            cameraRef.current,
-            measurementPointHelperRef.current.position
-          );
-          measurementPointHelperRef.current.position.copy(snapped);
-          // Pass WORLD position - renderers handle conversion internally
-          onMeasurementPointMoveRef.current?.(
-            selectedMeasurementPoint.measurementId,
-            selectedMeasurementPoint.pointIndex,
-            snapped
-          );
-          sceneManager.updateMeasurementPoint(
-            selectedMeasurementPoint.measurementId,
-            selectedMeasurementPoint.pointIndex,
-            snapped
-          );
-        }
-      };
-
-      const handleDraggingChanged = (e: { value: boolean }) => {
-        if (!e.value) {
-          handleDragEnd(); // Drag ended - snap to surface
-          // Re-enable orbit controls after drag
-          if (controlsRef.current) {
-            controlsRef.current.enabled = true;
-          }
-        }
-      };
-
-      transformControls.addEventListener('objectChange', handleObjectChange);
-      transformControls.addEventListener('dragging-changed', handleDraggingChanged);
-
-      return () => {
-        transformControls.removeEventListener('objectChange', handleObjectChange);
-        transformControls.removeEventListener('dragging-changed', handleDraggingChanged);
-      };
-    } else {
-      // No point selected - re-attach to splat mesh if transform mode active
-      const splatMesh = sceneManager.getSplatMesh();
-      if (splatMesh && transformMode !== null) {
-        transformControls.attach(splatMesh);
-      }
-    }
-  }, [selectedMeasurementPoint, transformMode]);
+  // Note: Measurement point gizmo effect removed - now using direct drag on markers
 
   // Annotation gizmo effect - attaches TransformControls when an annotation is selected
   useEffect(() => {
@@ -999,9 +945,6 @@ const Viewer3D = ({
       scene.remove(annotationHelperRef.current);
       annotationHelperRef.current = null;
     }
-
-    // Don't show annotation gizmo if a measurement point is selected (measurement takes priority)
-    if (selectedMeasurementPoint) return;
 
     if (selectedAnnotationId) {
       // Get world position from SceneManager (handles LOCAL→WORLD conversion correctly)
@@ -1072,13 +1015,13 @@ const Viewer3D = ({
         transformControls.removeEventListener('dragging-changed', handleDraggingChanged);
       };
     } else {
-      // No annotation selected - re-attach to splat mesh if transform mode active and no measurement selected
+      // No annotation selected - re-attach to splat mesh if transform mode active
       const splatMesh = sceneManager.getSplatMesh();
-      if (splatMesh && transformMode !== null && !selectedMeasurementPoint) {
+      if (splatMesh && transformMode !== null) {
         transformControls.attach(splatMesh);
       }
     }
-  }, [selectedAnnotationId, selectedMeasurementPoint, transformMode]);
+  }, [selectedAnnotationId, transformMode]);
 
   // Reset view function
   const resetView = useCallback(() => {
@@ -1122,13 +1065,34 @@ const Viewer3D = ({
   // The click vs drag detection (> 3px threshold in handleClick) already
   // distinguishes between navigation and point placement.
 
-  // Sync magnifier enabled state with active tool (placement only, not repositioning)
-  // Repositioning uses transform gizmo instead, so magnifier is not needed
+  // Sync magnifier enabled state with active tool OR dragging measurement point
   useEffect(() => {
     const placementTools = ['comment', 'pin', 'distance', 'area', 'angle'];
     const isPlacement = state.activeTool != null && placementTools.includes(state.activeTool);
-    magnifierUpdaterRef.current?.setEnabled(isPlacement);
-  }, [state.activeTool]);
+    const isDragging = draggingMeasurementPoint != null;
+    magnifierUpdaterRef.current?.setEnabled(isPlacement || isDragging);
+  }, [state.activeTool, draggingMeasurementPoint]);
+
+  // Disable orbit controls during measurement point drag
+  useEffect(() => {
+    if (controlsRef.current) {
+      if (draggingMeasurementPoint) {
+        controlsRef.current.enabled = false;
+      } else {
+        // Only re-enable if not in gizmo drag
+        if (!gizmoDraggingRef.current) {
+          controlsRef.current.enabled = true;
+        }
+      }
+    }
+  }, [draggingMeasurementPoint]);
+
+  // Update cursor during measurement point drag
+  useEffect(() => {
+    if (containerRef.current && draggingMeasurementPoint) {
+      containerRef.current.style.cursor = 'grabbing';
+    }
+  }, [draggingMeasurementPoint]);
 
   // Sync magnifier canvas prop
   useEffect(() => {

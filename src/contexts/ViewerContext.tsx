@@ -17,7 +17,7 @@ import {
   MeasurementUnit,
   MeasurementType,
   CollaborationTab,
-  SelectedMeasurementPoint,
+  DraggingMeasurementPoint,
 } from '@/types/viewer';
 import { UserRole, ROLE_PERMISSIONS, RolePermissions } from '@/types/user';
 
@@ -55,10 +55,13 @@ interface ViewerContextType {
   hoverMeasurement: (id: string | null) => void;
   setMeasurementUnit: (unit: MeasurementUnit) => void;
 
-  // Measurement point editing
-  selectMeasurementPoint: (measurementId: string, pointIndex: number) => void;
-  clearMeasurementPointSelection: () => void;
+  // Measurement point dragging
+  startDraggingMeasurementPoint: (measurementId: string, pointIndex: number) => void;
+  stopDraggingMeasurementPoint: () => void;
   updateMeasurementPoint: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
+
+  // Measurement points sync (for syncing state from renderer after transforms)
+  updateMeasurementPoints: (measurementId: string, newPoints: THREE.Vector3[]) => void;
 
   // Measurement segment deletion (returns action taken and new measurement ID if split)
   removeSegmentFromMeasurement: (measurementId: string, segmentIndex: number) => {
@@ -129,7 +132,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       ...prev,
       activeTool: tool,
       selectedAnnotationId: null,
-      selectedMeasurementPoint: null,
+      draggingMeasurementPoint: null,
       selectedMeasurementId: null,
     }));
   }, []);
@@ -208,7 +211,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       measurements: prev.measurements.filter(m => m.id !== id),
       // Clear selection if the deleted measurement was selected
       selectedMeasurementId: prev.selectedMeasurementId === id ? null : prev.selectedMeasurementId,
-      selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === id ? null : prev.selectedMeasurementPoint,
+      draggingMeasurementPoint: prev.draggingMeasurementPoint?.measurementId === id ? null : prev.draggingMeasurementPoint,
     }));
   }, []);
 
@@ -347,23 +350,28 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({ ...prev, measurementUnit: unit }));
   }, []);
 
-  // Measurement point editing
-  const selectMeasurementPoint = useCallback((measurementId: string, pointIndex: number) => {
+  // Measurement point dragging
+  const startDraggingMeasurementPoint = useCallback((measurementId: string, pointIndex: number) => {
     setState(prev => ({
       ...prev,
-      selectedMeasurementPoint: { measurementId, pointIndex },
+      draggingMeasurementPoint: { measurementId, pointIndex },
       selectedMeasurementId: measurementId, // Also select the measurement itself
+      // Save current tool before clearing (to restore after drag)
+      toolBeforeDrag: prev.activeTool,
       // Clear other selections for mutual exclusivity
       activeTool: null,
       selectedAnnotationId: null,
     }));
   }, []);
 
-  const clearMeasurementPointSelection = useCallback(() => {
+  const stopDraggingMeasurementPoint = useCallback(() => {
     setState(prev => ({
       ...prev,
-      selectedMeasurementPoint: null,
-      selectedMeasurementId: null,
+      draggingMeasurementPoint: null,
+      // Restore the tool that was active before dragging
+      activeTool: prev.toolBeforeDrag,
+      toolBeforeDrag: null,
+      // Note: We keep selectedMeasurementId so the measurement remains highlighted briefly
     }));
   }, []);
 
@@ -403,6 +411,47 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
         return { ...m, points: newPoints, value: newValue };
       }),
+    }));
+  }, []);
+
+  // Update measurement points directly (for sync from renderer after transforms)
+  // This replaces all points at once, used before split/truncate operations
+  // to ensure state matches the renderer's current world positions
+  const updateMeasurementPoints = useCallback((
+    measurementId: string,
+    newPoints: THREE.Vector3[]
+  ) => {
+    setState(prev => ({
+      ...prev,
+      measurements: prev.measurements.map(m => {
+        if (m.id !== measurementId) return m;
+
+        // Recalculate value based on measurement type
+        let newValue = 0;
+        if (m.type === 'distance' && newPoints.length >= 2) {
+          for (let i = 0; i < newPoints.length - 1; i++) {
+            newValue += newPoints[i].distanceTo(newPoints[i + 1]);
+          }
+        } else if (m.type === 'area' && newPoints.length >= 3) {
+          const n = newPoints.length;
+          const crossSum = new THREE.Vector3(0, 0, 0);
+          const origin = newPoints[0];
+          for (let i = 1; i < n - 1; i++) {
+            const v1 = new THREE.Vector3().subVectors(newPoints[i], origin);
+            const v2 = new THREE.Vector3().subVectors(newPoints[i + 1], origin);
+            const cross = new THREE.Vector3().crossVectors(v1, v2);
+            crossSum.add(cross);
+          }
+          newValue = crossSum.length() / 2;
+        }
+
+        return { ...m, points: newPoints.map(p => p.clone()), value: newValue };
+      }),
+      // Clear drag state if it references this measurement
+      draggingMeasurementPoint:
+        prev.draggingMeasurementPoint?.measurementId === measurementId
+          ? null
+          : prev.draggingMeasurementPoint,
     }));
   }, []);
 
@@ -451,7 +500,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
           ...prev,
           measurements: prev.measurements.filter(m => m.id !== measurementId),
           selectedMeasurementId: prev.selectedMeasurementId === measurementId ? null : prev.selectedMeasurementId,
-          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId ? null : prev.selectedMeasurementPoint,
+          draggingMeasurementPoint: prev.draggingMeasurementPoint?.measurementId === measurementId ? null : prev.draggingMeasurementPoint,
         };
       }
 
@@ -466,9 +515,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
           measurements: prev.measurements.map(m =>
             m.id === measurementId ? updatedMeasurement : m
           ),
-          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId
+          draggingMeasurementPoint: prev.draggingMeasurementPoint?.measurementId === measurementId
             ? null
-            : prev.selectedMeasurementPoint,
+            : prev.draggingMeasurementPoint,
         };
       }
 
@@ -483,9 +532,9 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
           measurements: prev.measurements.map(m =>
             m.id === measurementId ? updatedMeasurement : m
           ),
-          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId
+          draggingMeasurementPoint: prev.draggingMeasurementPoint?.measurementId === measurementId
             ? null
-            : prev.selectedMeasurementPoint,
+            : prev.draggingMeasurementPoint,
         };
       }
 
@@ -533,7 +582,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
         ],
         // Clear selection (segment no longer exists)
         selectedMeasurementId: null,
-        selectedMeasurementPoint: null,
+        draggingMeasurementPoint: null,
       };
     });
 
@@ -627,7 +676,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       selectedAnnotationId: id,
       // Clear other selections for mutual exclusivity
       activeTool: null,
-      selectedMeasurementPoint: null,
+      draggingMeasurementPoint: null,
       selectedMeasurementId: null,
       // Open panel when selecting an annotation
       isAnnotationPanelOpen: id !== null ? true : prev.isAnnotationPanelOpen,
@@ -822,9 +871,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     selectMeasurement,
     hoverMeasurement,
     setMeasurementUnit,
-    selectMeasurementPoint,
-    clearMeasurementPointSelection,
+    startDraggingMeasurementPoint,
+    stopDraggingMeasurementPoint,
     updateMeasurementPoint,
+    updateMeasurementPoints,
     removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,
@@ -880,9 +930,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     selectMeasurement,
     hoverMeasurement,
     setMeasurementUnit,
-    selectMeasurementPoint,
-    clearMeasurementPointSelection,
+    startDraggingMeasurementPoint,
+    stopDraggingMeasurementPoint,
     updateMeasurementPoint,
+    updateMeasurementPoints,
     removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,

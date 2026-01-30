@@ -41,7 +41,11 @@ export class MagnifierUpdater {
   update(sourceCanvas: HTMLCanvasElement): void {
     if (!this._enabled || !this.loupeCanvas || !this.loupeCtx) return;
 
-    const dpr = sourceCanvas.width / sourceCanvas.clientWidth;
+    // Guard against divide-by-zero when canvas is not yet laid out
+    const clientWidth = sourceCanvas.clientWidth;
+    if (clientWidth === 0) return;
+
+    const dpr = sourceCanvas.width / clientWidth;
     const srcCenterX = this._mouseX * dpr;
     const srcCenterY = this._mouseY * dpr;
 

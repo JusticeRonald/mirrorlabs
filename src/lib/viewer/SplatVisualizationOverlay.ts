@@ -97,6 +97,9 @@ export class SplatVisualizationOverlay {
     this.pointsCloud = new THREE.Points(geometry, material);
     this.pointsCloud.frustumCulled = false;
 
+    // Ensure splat mesh matrix is current before copying transform
+    splatMesh.updateMatrix();
+
     // Sync the point cloud transform with the splat mesh (don't bake into vertices)
     this.pointsCloud.position.copy(splatMesh.position);
     this.pointsCloud.quaternion.copy(splatMesh.quaternion);
