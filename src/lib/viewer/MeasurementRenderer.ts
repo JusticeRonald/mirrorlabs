@@ -79,6 +79,9 @@ export class MeasurementRenderer {
   private hoveredId: string | null = null;
   private selectedId: string | null = null;
 
+  // Pulse animation state for selected measurement
+  private pulsePhase: number = 0;
+
   // Preview measurement (in-progress)
   private previewGroup: THREE.Group | null = null;
 
@@ -869,15 +872,20 @@ export class MeasurementRenderer {
    * Set the selected measurement
    */
   setSelected(id: string | null): void {
-    // Unselect previous
+    // Unselect previous - restore default opacity
     if (this.selectedId && this.selectedId !== id) {
       const prev = this.measurements.get(this.selectedId);
       if (prev) {
         this.applyState(prev, this.hoveredId === this.selectedId ? 'hovered' : 'default');
+        // Reset opacity to 1.0 when deselecting
+        this.setMeasurementOpacity(this.selectedId, 1.0);
       }
     }
 
     this.selectedId = id;
+
+    // Reset pulse phase when selection changes
+    this.pulsePhase = 0;
 
     // Apply selection to new
     if (id) {
@@ -922,6 +930,64 @@ export class MeasurementRenderer {
     });
 
     // Note: 3D point scaling removed - using HTML overlays instead
+  }
+
+  /**
+   * Set the opacity of all lines and fills for a measurement
+   * Used by pulse animation to create glowing effect
+   */
+  private setMeasurementOpacity(measurementId: string, opacity: number): void {
+    const group = this.measurements.get(measurementId);
+    if (!group) return;
+
+    const data = group.userData.data as MeasurementData;
+    const segmentCount = data.type === 'distance'
+      ? data.points.length - 1
+      : data.points.length;
+
+    // Update opacity on all segment lines
+    for (let i = 0; i < segmentCount; i++) {
+      const segment = this.segmentLines.get(`${measurementId}-${i}`);
+      if (segment) {
+        // Apply to both outline and main line
+        (segment.outline.material as LineMaterial).opacity = opacity;
+        (segment.main.material as LineMaterial).opacity = opacity;
+      }
+    }
+
+    // Update fill opacity for area measurements
+    if (data.type === 'area') {
+      group.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+          (child.material as THREE.MeshBasicMaterial).opacity = this.config.areaFillOpacity * opacity;
+        }
+      });
+    }
+  }
+
+  /**
+   * Update the pulse animation for selected measurement
+   * Call this from the render loop with deltaTime in seconds
+   */
+  updatePulse(deltaTime: number): void {
+    if (!this.selectedId) return;
+
+    // Advance pulse phase
+    // ~1.5 seconds per full cycle (2π radians)
+    const PULSE_SPEED = (2 * Math.PI) / 1.5;
+    this.pulsePhase += deltaTime * PULSE_SPEED;
+
+    // Keep phase bounded to avoid float precision issues over long sessions
+    if (this.pulsePhase > 2 * Math.PI) {
+      this.pulsePhase -= 2 * Math.PI;
+    }
+
+    // Calculate pulse intensity using sine wave
+    // Range: 0.3 to 1.0 (never fully transparent)
+    const intensity = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(this.pulsePhase));
+
+    // Apply opacity to selected measurement
+    this.setMeasurementOpacity(this.selectedId, intensity);
   }
 
   /**

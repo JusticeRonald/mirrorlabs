@@ -246,20 +246,7 @@ const ViewerContent = () => {
               canDelete, // Can delete segment (removes start point)
             });
           });
-
-          // Add total distance label if polyline has more than one segment
-          if (positions.segments.length > 1) {
-            // Position total label at the midpoint of the entire polyline (first segment for now)
-            // Could be improved to position at centroid or endpoint
-            labels.push({
-              id: `${measurement.id}-total`,
-              position: positions.segments[0].position.clone().add(new THREE.Vector3(0, 0.15, 0)), // Offset slightly above
-              value: `Total: ${MeasurementCalculator.formatDistance(positions.totalLength, unit)}`,
-              type: 'distance',
-              measurementId: measurement.id,
-              canDelete, // Can delete entire measurement from total label
-            });
-          }
+          // Note: Total label removed from 3D view - total is shown in UI panel instead
         }
       } else if (measurement.type === 'area') {
         // Get centroid and segment positions from renderer
@@ -825,6 +812,12 @@ const ViewerContent = () => {
     const renderer = sceneManagerRef.current?.getMeasurementRenderer();
     if (renderer) renderer.setVisible(state.showMeasurements);
   }, [state.showMeasurements]);
+
+  // Sync measurement selection with renderer (for pulsing effect)
+  useEffect(() => {
+    const renderer = sceneManagerRef.current?.getMeasurementRenderer();
+    renderer?.setSelected(state.selectedMeasurementId);
+  }, [state.selectedMeasurementId]);
 
   // Show measurement preview line during placement (frozen during orbit)
   useEffect(() => {

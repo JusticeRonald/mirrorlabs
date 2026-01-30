@@ -704,6 +704,9 @@ const Viewer3D = ({
         sceneManager.syncOverlay();
       }
 
+      // Update measurement pulse animation (for selected measurement glow effect)
+      sceneManager.getMeasurementRenderer()?.updatePulse(deltaTime);
+
       const magnifier = magnifierUpdaterRef.current;
 
       // Two-pass rendering: hide ALL measurements from magnifier for clean splat surface view
