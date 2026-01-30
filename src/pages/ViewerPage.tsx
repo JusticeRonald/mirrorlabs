@@ -13,6 +13,8 @@ import ViewerLoadingOverlay from '@/components/viewer/ViewerLoadingOverlay';
 import AnnotationModal from '@/components/viewer/AnnotationModal';
 import { AnnotationIconOverlay } from '@/components/viewer/AnnotationMarker';
 import { MeasurementIconOverlay, type MeasurementPointData } from '@/components/viewer/MeasurementMarker';
+import { MeasurementLabelOverlay, type MeasurementLabelData } from '@/components/viewer/MeasurementLabel';
+import { MeasurementCalculator, type MeasurementUnit } from '@/lib/viewer/MeasurementCalculator';
 import { AxisNavigator, type ViewDirection } from '@/components/viewer/AxisNavigator';
 import { MagnifierLoupe } from '@/components/viewer/MagnifierLoupe';
 import type { AnnotationData } from '@/lib/viewer/AnnotationRenderer';
@@ -210,6 +212,74 @@ const ViewerContent = () => {
     const firstPoint = pending.points[0];
     return measurementCursorPosition.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD;
   }, [state.pendingMeasurement, measurementCursorPosition]);
+
+  // Build measurement label data for overlay
+  const measurementLabels = useMemo<MeasurementLabelData[]>(() => {
+    const labels: MeasurementLabelData[] = [];
+    const renderer = sceneManagerRef.current?.getMeasurementRenderer();
+
+    // Labels for finalized measurements
+    for (const measurement of state.measurements) {
+      const unit = (measurement.unit || 'ft') as MeasurementUnit;
+
+      if (measurement.type === 'distance') {
+        // Get midpoint position from renderer (handles transform parenting)
+        const position = renderer?.getDistanceLabelPosition(measurement.id);
+        if (position) {
+          labels.push({
+            id: `${measurement.id}-label`,
+            position,
+            value: MeasurementCalculator.formatDistance(measurement.value, unit),
+            type: 'distance',
+          });
+        }
+      } else if (measurement.type === 'area') {
+        // Get centroid and segment positions from renderer
+        const positions = renderer?.getAreaLabelPositions(measurement.id);
+        if (positions) {
+          // Centroid label (total area)
+          labels.push({
+            id: `${measurement.id}-area`,
+            position: positions.centroid,
+            value: MeasurementCalculator.formatArea(measurement.value, unit),
+            type: 'area',
+          });
+          // Segment labels (each side length)
+          positions.segments.forEach((seg, i) => {
+            labels.push({
+              id: `${measurement.id}-seg-${i}`,
+              position: seg.position,
+              value: MeasurementCalculator.formatDistance(seg.length, unit),
+              type: 'segment',
+            });
+          });
+        }
+      }
+    }
+
+    // Preview label (during measurement placement)
+    if (state.pendingMeasurement && measurementCursorPosition && !isOrbiting) {
+      const points = state.pendingMeasurement.points;
+      if (points.length > 0) {
+        const lastPoint = points[points.length - 1];
+        const cursorPoint = measurementCursorPosition;
+
+        // Midpoint between last point and cursor
+        const midpoint = MeasurementCalculator.calculateMidpoint(lastPoint, cursorPoint);
+        const distance = lastPoint.distanceTo(cursorPoint);
+
+        labels.push({
+          id: 'preview-label',
+          position: midpoint,
+          value: MeasurementCalculator.formatDistance(distance, 'ft'),
+          type: 'distance',
+          isPreview: true,
+        });
+      }
+    }
+
+    return labels;
+  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady]);
 
   /**
    * Normalize a position to THREE.Vector3.
@@ -1421,6 +1491,15 @@ const ViewerContent = () => {
             sceneManagerRef.current?.getMeasurementPointWorldPosition(measurementId, pointIndex) ?? null
           }
         />}
+
+        {/* HTML Measurement Label Overlay - hidden in point cloud mode */}
+        {state.showMeasurements && state.splatViewMode !== 'pointcloud' && (
+          <MeasurementLabelOverlay
+            labels={measurementLabels}
+            camera={camera}
+            containerRef={viewerContainerRef}
+          />
+        )}
 
         {/* Magnifier Loupe for precise point placement */}
         <MagnifierLoupe

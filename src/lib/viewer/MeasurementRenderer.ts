@@ -237,6 +237,69 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Get the midpoint position for a distance measurement label (world space)
+   */
+  getDistanceLabelPosition(id: string): THREE.Vector3 | null {
+    const group = this.measurements.get(id);
+    if (!group) return null;
+
+    const data = group.userData.data as MeasurementData;
+    if (data.type !== 'distance' || data.points.length !== 2) return null;
+
+    // Calculate midpoint in local space
+    const midpoint = MeasurementCalculator.calculateMidpoint(data.points[0], data.points[1]);
+    // Convert to world space
+    this.parentObject.localToWorld(midpoint);
+    return midpoint;
+  }
+
+  /**
+   * Get label positions for an area measurement (world space)
+   * Returns centroid for total area label and midpoints for segment labels
+   */
+  getAreaLabelPositions(id: string): { centroid: THREE.Vector3; segments: Array<{ position: THREE.Vector3; length: number }> } | null {
+    const group = this.measurements.get(id);
+    if (!group) return null;
+
+    const data = group.userData.data as MeasurementData;
+    if (data.type !== 'area' || data.points.length < 3) return null;
+
+    // Centroid for total area label (in local space, then convert)
+    const centroid = MeasurementCalculator.calculateCentroid(data.points);
+    this.parentObject.localToWorld(centroid);
+
+    // Midpoints for each segment with their lengths
+    const segments: Array<{ position: THREE.Vector3; length: number }> = [];
+    for (let i = 0; i < data.points.length; i++) {
+      const p1 = data.points[i];
+      const p2 = data.points[(i + 1) % data.points.length];
+
+      // Calculate midpoint in local space
+      const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
+      // Convert to world space
+      this.parentObject.localToWorld(midpoint);
+
+      // Calculate segment length in local space (measurement units)
+      const length = MeasurementCalculator.calculateDistance(p1, p2);
+
+      segments.push({ position: midpoint, length });
+    }
+
+    return { centroid, segments };
+  }
+
+  /**
+   * Get measurement data including value and unit for display
+   */
+  getMeasurementDisplayData(id: string): { value: number; unit: MeasurementUnit; type: MeasurementType } | null {
+    const group = this.measurements.get(id);
+    if (!group) return null;
+
+    const data = group.userData.data as MeasurementData;
+    return { value: data.value, unit: data.unit, type: data.type };
+  }
+
+  /**
    * Update resolution for Line2 materials when window resizes
    * Debounced to avoid excessive updates during drag resize (fires 10+ times)
    */
