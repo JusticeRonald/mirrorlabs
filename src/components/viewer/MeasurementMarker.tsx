@@ -2,6 +2,7 @@ import { useReducer, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { cn } from '@/lib/utils';
 import type { MeasurementType } from '@/types/viewer';
+import { MARKER_SCALE } from '@/lib/viewer/constants';
 
 /**
  * Measurement point data for rendering
@@ -108,9 +109,12 @@ export function MeasurementPointIcon({
     return null;
   }
 
-  // Calculate distance-based size (12px far, 24px close)
+  // Calculate distance-based size using centralized constants
   const distance = camera.position.distanceTo(point.position);
-  const scaledSize = Math.max(12, Math.min(24, 150 / distance));
+  const scaledSize = Math.max(
+    MARKER_SCALE.minSize,
+    Math.min(MARKER_SCALE.maxSize, MARKER_SCALE.base / distance)
+  );
 
   // Scale icon size inside based on container size
   const iconSize = Math.max(8, scaledSize * 0.5);

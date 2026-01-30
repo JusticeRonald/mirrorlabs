@@ -117,3 +117,52 @@ export const RIGHT_CLICK_MOVE_THRESHOLD = 3;
 
 /** Snap threshold for closing area polygon (~8cm / ~3 inches) */
 export const AREA_SNAP_THRESHOLD = 0.08;
+
+// ─── Polygon Offset ─────────────────────────────────────────────────────────
+
+/** Polygon offset for outline/background elements (behind main lines) */
+export const POLYGON_OFFSET_OUTLINE = { factor: -0.5, units: -0.5 };
+
+/** Polygon offset for main lines and fills (pushed forward in depth) */
+export const POLYGON_OFFSET_MAIN = { factor: -1.0, units: -1.0 };
+
+// ─── Distance-Based Scaling ─────────────────────────────────────────────────
+
+/**
+ * Label scaling configuration for distance-based font size
+ * Font size = base / cameraDistance, clamped to [minSize, maxSize]
+ */
+export const LABEL_SCALE = {
+  /** Base divisor for distance calculation */
+  base: 100,
+  /** Minimum font size in pixels */
+  minSize: 10,
+  /** Maximum font size in pixels */
+  maxSize: 14,
+};
+
+/**
+ * Marker scaling configuration for distance-based icon size
+ * Icon size = base / cameraDistance, clamped to [minSize, maxSize]
+ */
+export const MARKER_SCALE = {
+  /** Base divisor for distance calculation */
+  base: 150,
+  /** Minimum icon size in pixels */
+  minSize: 12,
+  /** Maximum icon size in pixels */
+  maxSize: 24,
+};
+
+// ─── Measurement Units ──────────────────────────────────────────────────────
+
+/** Valid measurement unit values */
+export const VALID_MEASUREMENT_UNITS = ['ft', 'm', 'in', 'cm'] as const;
+export type ValidMeasurementUnit = typeof VALID_MEASUREMENT_UNITS[number];
+
+/**
+ * Check if a value is a valid measurement unit
+ */
+export function isValidMeasurementUnit(unit: string): unit is ValidMeasurementUnit {
+  return VALID_MEASUREMENT_UNITS.includes(unit as ValidMeasurementUnit);
+}

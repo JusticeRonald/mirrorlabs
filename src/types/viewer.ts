@@ -269,6 +269,8 @@ export interface ViewerState {
   draggingMeasurementPoint: DraggingMeasurementPoint | null;
   /** Stores active tool before drag to restore after repositioning */
   toolBeforeDrag: string | null;
+  /** Stores selected measurement ID before drag to restore after repositioning */
+  selectedMeasurementIdBeforeDrag: string | null;
 
   // Markup state
   activeMarkupTool: MarkupToolType;
@@ -341,6 +343,7 @@ export const defaultViewerState: ViewerState = {
   measurementUnit: 'ft', // Default to feet (US construction standard)
   draggingMeasurementPoint: null,
   toolBeforeDrag: null,
+  selectedMeasurementIdBeforeDrag: null,
 
   // Markup state
   activeMarkupTool: null,

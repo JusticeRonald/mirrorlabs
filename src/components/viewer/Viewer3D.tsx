@@ -727,23 +727,24 @@ const Viewer3D = ({
 
       const magnifier = magnifierUpdaterRef.current;
 
-      // Two-pass rendering: hide ALL measurements from magnifier for clean splat surface view
-      if (magnifier?.enabled) {
-        // Store current visibility to restore after magnifier capture
-        const wasVisible = sceneManager.areMeasurementsVisible();
+      // Two-pass rendering: only needed when magnifier is enabled AND measurements are visible
+      // This avoids double-render when magnifier is enabled but no measurements exist
+      const wasVisible = sceneManager.areMeasurementsVisible();
+      const needsTwoPass = magnifier?.enabled && wasVisible;
 
+      if (needsTwoPass) {
         // Hide all measurement geometry for magnifier capture
         sceneManager.setMeasurementsVisible(false);
 
         renderer.render(scene, camera);
         magnifier.update(renderer.domElement);
 
-        // Restore measurement visibility to previous state
-        sceneManager.setMeasurementsVisible(wasVisible);
+        // Restore measurement visibility
+        sceneManager.setMeasurementsVisible(true);
 
         renderer.render(scene, camera);
       } else {
-        // Single render when magnifier disabled
+        // Single render when magnifier disabled or no measurements to hide
         renderer.render(scene, camera);
         magnifier?.update(renderer.domElement);
       }

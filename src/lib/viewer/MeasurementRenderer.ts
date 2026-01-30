@@ -5,6 +5,11 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import earcut from 'earcut';
 import { MeasurementCalculator, type MeasurementUnit } from './MeasurementCalculator';
 import type { MeasurementType } from '@/types/viewer';
+import {
+  POLYGON_OFFSET_OUTLINE,
+  POLYGON_OFFSET_MAIN,
+  isValidMeasurementUnit,
+} from './constants';
 
 /**
  * Data associated with a measurement
@@ -139,11 +144,13 @@ export class MeasurementRenderer {
     const newParent = parent ?? this.scene;
     if (newParent === this.parentObject) return;
 
+    // Null safety: ensure both parent objects are valid
+    const oldParent = this.parentObject;
+    if (!oldParent || !newParent) return;
+
     // Clear hover/selected state to avoid stale references after re-parenting
     this.hoveredId = null;
     this.selectedId = null;
-
-    const oldParent = this.parentObject;
 
     // Re-parent existing measurements, converting stored points between local spaces
     this.measurements.forEach((group) => {
@@ -440,7 +447,7 @@ export class MeasurementRenderer {
       clearTimeout(this.resizeDebounceTimer);
     }
 
-    // Debounce resize by 100ms
+    // Debounce resize by 16ms (one frame at 60fps) for responsive line width updates
     this.resizeDebounceTimer = setTimeout(() => {
       this.resolution.set(window.innerWidth, window.innerHeight);
       // Update all line materials with new resolution
@@ -453,7 +460,7 @@ export class MeasurementRenderer {
         });
       });
       this.resizeDebounceTimer = null;
-    }, 100);
+    }, 16);
   };
 
   /**
@@ -554,14 +561,15 @@ export class MeasurementRenderer {
         linewidth: this.config.lineWidth + 3,  // Thicker than main line
         resolution: this.resolution,
         polygonOffset: true,
-        polygonOffsetFactor: -0.5,  // Slightly behind main line
-        polygonOffsetUnits: -0.5,
+        polygonOffsetFactor: POLYGON_OFFSET_OUTLINE.factor,
+        polygonOffsetUnits: POLYGON_OFFSET_OUTLINE.units,
         depthWrite: false,
         transparent: true,
       });
 
       const outlineLine = new Line2(outlineGeometry, outlineMaterial);
       outlineLine.computeLineDistances();
+      outlineLine.frustumCulled = true;  // Enable frustum culling for performance
       outlineLine.name = `measurement-outline-${i}`;
       outlineLine.renderOrder = 99;  // Render just before white line
       group.add(outlineLine);
@@ -575,14 +583,15 @@ export class MeasurementRenderer {
         linewidth: this.config.lineWidth,
         resolution: this.resolution,
         polygonOffset: true,
-        polygonOffsetFactor: -1.0,  // Push forward in depth
-        polygonOffsetUnits: -1.0,
+        polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+        polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
         depthWrite: false,  // Don't occlude splat behind
         transparent: true,
       });
 
       const line = new Line2(lineGeometry, lineMaterial);
       line.computeLineDistances();
+      line.frustumCulled = true;  // Enable frustum culling for performance
       line.name = `measurement-line-${i}`;
       line.renderOrder = 100;  // Render after splat
       group.add(line);
@@ -659,14 +668,15 @@ export class MeasurementRenderer {
         linewidth: this.config.lineWidth + 3,  // Thicker than main line
         resolution: this.resolution,
         polygonOffset: true,
-        polygonOffsetFactor: -0.5,
-        polygonOffsetUnits: -0.5,
+        polygonOffsetFactor: POLYGON_OFFSET_OUTLINE.factor,
+        polygonOffsetUnits: POLYGON_OFFSET_OUTLINE.units,
         depthWrite: false,
         transparent: true,
       });
 
       const blackOutline = new Line2(blackOutlineGeometry, blackOutlineMaterial);
       blackOutline.computeLineDistances();
+      blackOutline.frustumCulled = true;  // Enable frustum culling for performance
       blackOutline.name = `area-black-outline-${i}`;
       blackOutline.renderOrder = 99;
       group.add(blackOutline);
@@ -680,14 +690,15 @@ export class MeasurementRenderer {
         linewidth: this.config.lineWidth,
         resolution: this.resolution,
         polygonOffset: true,
-        polygonOffsetFactor: -1.0,
-        polygonOffsetUnits: -1.0,
+        polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+        polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
         depthWrite: false,
         transparent: true,
       });
 
       const outline = new Line2(outlineGeometry, outlineMaterial);
       outline.computeLineDistances();
+      outline.frustumCulled = true;  // Enable frustum culling for performance
       outline.name = `area-outline-${i}`;
       outline.renderOrder = 100;
       group.add(outline);
@@ -707,8 +718,8 @@ export class MeasurementRenderer {
         side: THREE.DoubleSide,
         depthWrite: false,
         polygonOffset: true,
-        polygonOffsetFactor: -1.0,
-        polygonOffsetUnits: -1.0,
+        polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+        polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
       });
       const fill = new THREE.Mesh(fillGeometry, fillMaterial);
       fill.name = 'area-fill';
@@ -806,6 +817,9 @@ export class MeasurementRenderer {
    * Update a measurement's unit (stored data only, no labels)
    */
   updateMeasurement(id: string, unit: MeasurementUnit): void {
+    // Validate unit before updating
+    if (!isValidMeasurementUnit(unit)) return;
+
     const group = this.measurements.get(id);
     if (!group) return;
 
@@ -1104,8 +1118,8 @@ export class MeasurementRenderer {
       linewidth: 1.5, // Thin line (~1.5px)
       resolution: this.resolution,
       polygonOffset: true,
-      polygonOffsetFactor: -1.0,
-      polygonOffsetUnits: -1.0,
+      polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+      polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
       depthWrite: false,
       transparent: true,
       opacity: 0.9,
@@ -1116,6 +1130,7 @@ export class MeasurementRenderer {
 
     this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
     this.previewLine.computeLineDistances();
+    this.previewLine.frustumCulled = true;  // Enable frustum culling for performance
     this.previewLine.name = 'preview-line';
     this.previewLine.renderOrder = 99;
     this.previewGroup.add(this.previewLine);
@@ -1162,8 +1177,8 @@ export class MeasurementRenderer {
       linewidth: 1.5, // Thin line (~1.5px)
       resolution: this.resolution,
       polygonOffset: true,
-      polygonOffsetFactor: -1.0,
-      polygonOffsetUnits: -1.0,
+      polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+      polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
       depthWrite: false,
       transparent: true,
       opacity: 0.9,
@@ -1174,6 +1189,7 @@ export class MeasurementRenderer {
 
     this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
     this.previewLine.computeLineDistances();
+    this.previewLine.frustumCulled = true;  // Enable frustum culling for performance
     this.previewLine.name = 'preview-line';
     this.previewLine.renderOrder = 99;
     this.previewGroup.add(this.previewLine);
@@ -1195,8 +1211,8 @@ export class MeasurementRenderer {
           side: THREE.DoubleSide,
           depthWrite: false,
           polygonOffset: true,
-          polygonOffsetFactor: -1.0,
-          polygonOffsetUnits: -1.0,
+          polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+          polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
         });
         const fill = new THREE.Mesh(fillGeometry, fillMaterial);
         fill.renderOrder = 98; // Render after splat but before lines (99)
@@ -1370,8 +1386,8 @@ export class MeasurementRenderer {
       linewidth: 1.5, // Thin line (~1.5px)
       resolution: this.resolution,
       polygonOffset: true,
-      polygonOffsetFactor: -1.0,
-      polygonOffsetUnits: -1.0,
+      polygonOffsetFactor: POLYGON_OFFSET_MAIN.factor,
+      polygonOffsetUnits: POLYGON_OFFSET_MAIN.units,
       depthWrite: false,
       transparent: true,
       opacity: 0.9,
@@ -1382,6 +1398,7 @@ export class MeasurementRenderer {
 
     this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
     this.previewLine.computeLineDistances();
+    this.previewLine.frustumCulled = true;  // Enable frustum culling for performance
     this.previewLine.name = 'drag-preview-line';
     this.previewLine.renderOrder = 99;
     this.previewGroup.add(this.previewLine);

@@ -355,9 +355,10 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       draggingMeasurementPoint: { measurementId, pointIndex },
-      selectedMeasurementId: measurementId, // Also select the measurement itself
-      // Save current tool before clearing (to restore after drag)
+      selectedMeasurementId: measurementId, // Select during drag for visual feedback
+      // Save state to restore after drag
       toolBeforeDrag: prev.activeTool,
+      selectedMeasurementIdBeforeDrag: prev.selectedMeasurementId,
       // Clear other selections for mutual exclusivity
       activeTool: null,
       selectedAnnotationId: null,
@@ -368,10 +369,11 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     setState(prev => ({
       ...prev,
       draggingMeasurementPoint: null,
-      // Restore the tool that was active before dragging
+      // Restore state from before dragging
       activeTool: prev.toolBeforeDrag,
       toolBeforeDrag: null,
-      // Note: We keep selectedMeasurementId so the measurement remains highlighted briefly
+      selectedMeasurementId: prev.selectedMeasurementIdBeforeDrag,
+      selectedMeasurementIdBeforeDrag: null,
     }));
   }, []);
 

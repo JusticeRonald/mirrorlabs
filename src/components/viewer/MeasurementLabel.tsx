@@ -2,6 +2,7 @@ import { useReducer, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { LABEL_SCALE } from '@/lib/viewer/constants';
 
 /**
  * Label data for measurement overlays
@@ -89,9 +90,12 @@ export function MeasurementLabel({
     return null;
   }
 
-  // Distance-based scaling (same pattern as point icons: 150 / distance clamped)
+  // Distance-based scaling using centralized constants
   const distance = camera.position.distanceTo(position);
-  const scaledFontSize = Math.max(10, Math.min(14, 100 / distance));
+  const scaledFontSize = Math.max(
+    LABEL_SCALE.minSize,
+    Math.min(LABEL_SCALE.maxSize, LABEL_SCALE.base / distance)
+  );
 
   // Interactive labels (non-preview, can delete)
   const isInteractive = !isPreview && canDelete;
