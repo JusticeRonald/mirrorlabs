@@ -361,6 +361,7 @@ Three account types with different permission levels:
 - ✅ Measurement selection pulse effect (January 30, 2026)
 - ✅ Area measurement fill styling (blue color, increased opacity) (January 30, 2026)
 - ✅ Area fill viewing angle bug fix (polygonOffset + renderOrder) (January 30, 2026)
+- ✅ Pre-commit code review fixes (performance, robustness, maintainability) (January 30, 2026)
 
 ### Next Priority (P1 Features)
 - [x] Functional measurement tool (distance, area)
@@ -376,6 +377,58 @@ Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Bot
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 30, 2026) - Pre-Commit Performance & Robustness
+
+Comprehensive code review fixes addressing performance, robustness, and maintainability:
+
+### Issues Fixed
+
+| Issue | Category | Fix |
+|-------|----------|-----|
+| **#5** | Performance | Fix double-render: only two-pass when magnifier enabled AND measurements visible |
+| **#6** | Performance | Reduce resize debounce from 100ms to 16ms for responsive line width |
+| **#11** | Performance | Add frustum culling to all Line2 objects |
+| **#12** | Maintainability | Centralize polygon offset values in `constants.ts` |
+| **#17** | Robustness | Add null checks in `MeasurementRenderer.setParentObject()` |
+| **#21** | Maintainability | Extract label/marker scaling magic numbers to constants |
+| **#26** | Robustness | Add unit validation in `updateMeasurement()` |
+
+### New Constants Added (`src/lib/viewer/constants.ts`)
+
+```typescript
+// Polygon offset for depth handling
+POLYGON_OFFSET_OUTLINE = { factor: -0.5, units: -0.5 }
+POLYGON_OFFSET_MAIN = { factor: -1.0, units: -1.0 }
+
+// Distance-based scaling
+LABEL_SCALE = { base: 100, minSize: 10, maxSize: 14 }
+MARKER_SCALE = { base: 150, minSize: 12, maxSize: 24 }
+
+// Unit validation
+VALID_MEASUREMENT_UNITS = ['ft', 'm', 'in', 'cm']
+isValidMeasurementUnit(unit: string): boolean
+```
+
+### State Management Fix
+
+- Restore `selectedMeasurementId` after drag ends (prevents selection loss)
+- Added `selectedMeasurementIdBeforeDrag` to ViewerState
+
+### Files Modified
+
+- `src/lib/viewer/constants.ts` - Added new constants
+- `src/lib/viewer/MeasurementRenderer.ts` - Frustum culling, null checks, unit validation, debounce, constants
+- `src/components/viewer/MeasurementLabel.tsx` - Use `LABEL_SCALE` constant
+- `src/components/viewer/MeasurementMarker.tsx` - Use `MARKER_SCALE` constant
+- `src/components/viewer/Viewer3D.tsx` - Fixed double-render logic
+- `src/contexts/ViewerContext.tsx` - Restore selection after drag
+- `src/types/viewer.ts` - Added `selectedMeasurementIdBeforeDrag` state
+
+### Branch Status
+- `gaussian-splat-viewer` merged to `master` (January 30, 2026)
+
+---
 
 ## Code Review Summary (January 30, 2026) - Area Fill Styling
 
