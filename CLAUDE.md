@@ -356,21 +356,57 @@ Three account types with different permission levels:
 - ✅ Saved Views (camera waypoints) with fly-to animations (January 27, 2026)
 - ✅ AxisNavigator gizmo with view snapping (January 27, 2026)
 - ✅ 4-engineer code review with targeted fixes (January 27, 2026)
+- ✅ Measurement segment split behavior (January 30, 2026)
+- ✅ Measurement persistence to Supabase with updateMeasurement service (January 30, 2026)
 
 ### Next Priority (P1 Features)
 - [x] Functional measurement tool (distance, area)
 - [x] Annotation system with persistence and real-time sync
 - [x] Camera waypoints with smooth transitions (Saved Views)
+- [x] Measurement persistence to Supabase (January 30, 2026)
 - [ ] Basic sharing (public links)
-- [ ] Measurement persistence to Supabase (currently local-only)
 
 ### Branch Status
-Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Both branches are in sync as of January 29, 2026.
+Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Both branches are in sync as of January 30, 2026.
 
 ### To Resume Development
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 30, 2026)
+
+Distance measurement segment split behavior and persistence:
+
+### Changes Made
+| Category | Summary |
+|----------|---------|
+| **Segment Split Behavior** | Middle segment deletion splits measurement into two independent measurements |
+| **Segment Truncate** | First/last segment deletion truncates measurement (removes endpoint) |
+| **Action Return Type** | `removeSegmentFromMeasurement` now returns `'deleted' | 'truncated' | 'split'` |
+| **Measurement Persistence** | New `updateMeasurement` service for Supabase persistence |
+| **Split Persistence** | Split creates new measurement in Supabase, original is updated |
+
+### Files Modified
+- `src/contexts/ViewerContext.tsx` - Updated `removeSegmentFromMeasurement` with action types, added `calculatePolylineValue` helper
+- `src/lib/supabase/services/annotations.ts` - Added `updateMeasurement` service for partial updates
+- `src/pages/ViewerPage.tsx` - Updated `handleLabelDelete` to persist split/truncate actions to Supabase
+- `src/lib/viewer/MeasurementRenderer.ts` - Enhanced segment rendering and label positioning
+- `src/components/viewer/MeasurementLabel.tsx` - Updated label rendering with delete callbacks
+- `src/lib/viewer/SceneManager.ts` - Minor adjustments for measurement handling
+
+### Segment Deletion Behavior
+| Scenario | Action | Result |
+|----------|--------|--------|
+| Delete only segment (2 points) | `deleted` | Measurement removed entirely |
+| Delete first segment | `truncated` | First point removed, measurement shortened |
+| Delete last segment | `truncated` | Last point removed, measurement shortened |
+| Delete middle segment | `split` | Creates two independent measurements from remaining points |
+
+### Branch Status
+- `gaussian-splat-viewer` merged to `master` (January 30, 2026)
+
+---
 
 ## Code Review Summary (January 29, 2026)
 

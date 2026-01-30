@@ -37,7 +37,7 @@ The viewer supports loading and displaying Gaussian Splat files with:
 - **File formats**: PLY, SPZ, SPLAT, KSPLAT
 - **Camera controls**: Orbit navigation with smooth animations
 - **Annotations**: 3D-positioned pins and comments with real-time sync via Supabase Realtime
-- **Measurements**: Distance and area tools with gizmo-based point repositioning
+- **Measurements**: Distance and area tools with gizmo-based point repositioning and segment split/truncate on deletion
 - **Measurement Labels**: Live distance/area values displayed at line midpoints and polygon centroids
 - **Saved Views**: Camera waypoints with fly-to animations
 - **Axis Navigator**: 3D gizmo for snapping to orthographic views (front/back/top/bottom/left/right)
