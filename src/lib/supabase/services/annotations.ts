@@ -196,6 +196,29 @@ export async function deleteMeasurement(measurementId: string): Promise<{ error:
   return { error: null };
 }
 
+/**
+ * Update a measurement (for segment deletion/truncation)
+ */
+export async function updateMeasurement(
+  measurementId: string,
+  updates: { points_json?: object[]; value?: number }
+): Promise<{ error: Error | null }> {
+  if (!isSupabaseConfigured()) {
+    return { error: new Error('Supabase not configured') };
+  }
+
+  const { error } = await supabase
+    .from('measurements')
+    .update(updates)
+    .eq('id', measurementId);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+
+  return { error: null };
+}
+
 // =============================================================================
 // CAMERA WAYPOINTS (SAVED VIEWS)
 // =============================================================================

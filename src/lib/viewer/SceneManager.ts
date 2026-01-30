@@ -437,16 +437,18 @@ export class SceneManager {
 
   /**
    * Add a distance measurement to the scene
+   * Supports polylines with 2+ points via the additionalPoints parameter
    */
   addDistanceMeasurement(
     id: string,
     p1: THREE.Vector3,
     p2: THREE.Vector3,
-    data: Omit<MeasurementData, 'type' | 'points' | 'value'>
+    data: Omit<MeasurementData, 'type' | 'points' | 'value'>,
+    additionalPoints?: THREE.Vector3[]
   ): THREE.Group | null {
     if (!this.measurementRenderer) return null;
 
-    const group = this.measurementRenderer.addDistanceMeasurement(id, p1, p2, data);
+    const group = this.measurementRenderer.addDistanceMeasurement(id, p1, p2, data, additionalPoints);
     this.measurements.set(id, group);
     return group;
   }
@@ -468,6 +470,7 @@ export class SceneManager {
 
   /**
    * Add a measurement to the scene (legacy method for backward compatibility)
+   * Note: For polylines with 2+ points that aren't areas, use addDistanceMeasurement directly
    */
   addMeasurement(
     id: string,
@@ -477,6 +480,8 @@ export class SceneManager {
     if (points.length === 2) {
       this.addDistanceMeasurement(id, points[0], points[1], data);
     } else if (points.length >= 3) {
+      // Legacy behavior: 3+ points = area measurement
+      // For polylines, callers should use addDistanceMeasurement with additionalPoints
       this.addAreaMeasurement(id, points, data);
     }
   }
@@ -514,9 +519,10 @@ export class SceneManager {
 
   /**
    * Show distance preview (while measuring)
+   * Supports both legacy two-point mode and polyline mode with array of points
    */
-  showDistancePreview(p1: THREE.Vector3, p2: THREE.Vector3): void {
-    this.measurementRenderer?.showDistancePreview(p1, p2);
+  showDistancePreview(p1OrPoints: THREE.Vector3 | THREE.Vector3[], p2OrCursor: THREE.Vector3): void {
+    this.measurementRenderer?.showDistancePreview(p1OrPoints, p2OrCursor);
   }
 
   /**

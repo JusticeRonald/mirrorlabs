@@ -93,6 +93,10 @@ export class MeasurementRenderer {
   // Visibility state
   private visible: boolean = true;
 
+  // Per-segment line references for dashing control
+  // Key format: `${measurementId}-${segmentIndex}`
+  private segmentLines: Map<string, { outline: Line2; main: Line2 }> = new Map();
+
   constructor(scene: THREE.Scene, config: Partial<MeasurementConfig> = {}) {
     this.scene = scene;
     this.parentObject = scene; // Default to scene
@@ -124,27 +128,39 @@ export class MeasurementRenderer {
           return worldPos;
         });
 
-        // Rebuild Line2 geometry, labels, and area fill to match converted points
-        if (data.type === 'distance' && data.points.length === 2) {
-          const p1 = data.points[0];
-          const p2 = data.points[1];
-          group.traverse((child) => {
-            if (child instanceof Line2) {
-              const geometry = child.geometry as LineGeometry;
-              geometry.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]);
-              child.computeLineDistances();
+        // Rebuild Line2 geometry for each segment
+        const measurementId = data.id;
+        if (data.type === 'distance' && data.points.length >= 2) {
+          for (let i = 0; i < data.points.length - 1; i++) {
+            const p1 = data.points[i];
+            const p2 = data.points[i + 1];
+            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+            const segment = this.segmentLines.get(`${measurementId}-${i}`);
+            if (segment) {
+              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.outline.computeLineDistances();
+              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.main.computeLineDistances();
             }
-          });
+          }
         } else if (data.type === 'area' && data.points.length >= 3) {
-          const outlinePoints = [...data.points, data.points[0]];
-          const positions: number[] = [];
-          outlinePoints.forEach(p => positions.push(p.x, p.y, p.z));
-          group.traverse((child) => {
-            if (child instanceof Line2) {
-              const geometry = child.geometry as LineGeometry;
-              geometry.setPositions(positions);
-              child.computeLineDistances();
+          const n = data.points.length;
+          for (let i = 0; i < n; i++) {
+            const p1 = data.points[i];
+            const p2 = data.points[(i + 1) % n];
+            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+            const segment = this.segmentLines.get(`${measurementId}-${i}`);
+            if (segment) {
+              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.outline.computeLineDistances();
+              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.main.computeLineDistances();
             }
+          }
+          // Update fill mesh
+          group.traverse((child) => {
             if (child instanceof THREE.Mesh && child.name === 'area-fill') {
               const newFillGeometry = this.createPolygonGeometry(data.points);
               if (newFillGeometry) {
@@ -186,27 +202,39 @@ export class MeasurementRenderer {
         // Transform stored world-space points by the delta
         data.points = data.points.map(p => p.clone().applyMatrix4(deltaMatrix));
 
-        // Rebuild geometry with updated points
-        if (data.type === 'distance' && data.points.length === 2) {
-          const p1 = data.points[0];
-          const p2 = data.points[1];
-          group.traverse((child) => {
-            if (child instanceof Line2) {
-              const geometry = child.geometry as LineGeometry;
-              geometry.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]);
-              child.computeLineDistances();
+        // Rebuild geometry for each segment with updated points
+        const measurementId = data.id;
+        if (data.type === 'distance' && data.points.length >= 2) {
+          for (let i = 0; i < data.points.length - 1; i++) {
+            const p1 = data.points[i];
+            const p2 = data.points[i + 1];
+            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+            const segment = this.segmentLines.get(`${measurementId}-${i}`);
+            if (segment) {
+              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.outline.computeLineDistances();
+              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.main.computeLineDistances();
             }
-          });
+          }
         } else if (data.type === 'area' && data.points.length >= 3) {
-          const outlinePoints = [...data.points, data.points[0]];
-          const positions: number[] = [];
-          outlinePoints.forEach(p => positions.push(p.x, p.y, p.z));
-          group.traverse((child) => {
-            if (child instanceof Line2) {
-              const geometry = child.geometry as LineGeometry;
-              geometry.setPositions(positions);
-              child.computeLineDistances();
+          const n = data.points.length;
+          for (let i = 0; i < n; i++) {
+            const p1 = data.points[i];
+            const p2 = data.points[(i + 1) % n];
+            const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+            const segment = this.segmentLines.get(`${measurementId}-${i}`);
+            if (segment) {
+              (segment.outline.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.outline.computeLineDistances();
+              (segment.main.geometry as LineGeometry).setPositions(segmentPositions);
+              segment.main.computeLineDistances();
             }
+          }
+          // Update fill mesh
+          group.traverse((child) => {
             if (child instanceof THREE.Mesh && child.name === 'area-fill') {
               const newFillGeometry = this.createPolygonGeometry(data.points);
               if (newFillGeometry) {
@@ -238,19 +266,59 @@ export class MeasurementRenderer {
 
   /**
    * Get the midpoint position for a distance measurement label (world space)
+   * For simple 2-point measurements, returns a single midpoint.
+   * For polylines, returns the midpoint of the first segment only (use getDistanceLabelPositions for all).
+   * @deprecated Use getDistanceLabelPositions for polyline support
    */
   getDistanceLabelPosition(id: string): THREE.Vector3 | null {
     const group = this.measurements.get(id);
     if (!group) return null;
 
     const data = group.userData.data as MeasurementData;
-    if (data.type !== 'distance' || data.points.length !== 2) return null;
+    if (data.type !== 'distance' || data.points.length < 2) return null;
 
-    // Calculate midpoint in local space
+    // Calculate midpoint of first segment in local space
     const midpoint = MeasurementCalculator.calculateMidpoint(data.points[0], data.points[1]);
     // Convert to world space
     this.parentObject.localToWorld(midpoint);
     return midpoint;
+  }
+
+  /**
+   * Get label positions for a distance polyline measurement (world space)
+   * Returns midpoint and length for each segment, plus total distance
+   */
+  getDistanceLabelPositions(id: string): {
+    segments: Array<{ position: THREE.Vector3; length: number }>;
+    totalLength: number;
+  } | null {
+    const group = this.measurements.get(id);
+    if (!group) return null;
+
+    const data = group.userData.data as MeasurementData;
+    if (data.type !== 'distance' || data.points.length < 2) return null;
+
+    const segments: Array<{ position: THREE.Vector3; length: number }> = [];
+    let totalLength = 0;
+
+    // Calculate midpoint and length for each segment
+    for (let i = 0; i < data.points.length - 1; i++) {
+      const p1 = data.points[i];
+      const p2 = data.points[i + 1];
+
+      // Calculate midpoint in local space
+      const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
+      // Convert to world space
+      this.parentObject.localToWorld(midpoint);
+
+      // Calculate segment length in local space (measurement units)
+      const length = MeasurementCalculator.calculateDistance(p1, p2);
+      totalLength += length;
+
+      segments.push({ position: midpoint, length });
+    }
+
+    return { segments, totalLength };
   }
 
   /**
@@ -371,73 +439,93 @@ export class MeasurementRenderer {
   }
 
   /**
-   * Add a distance measurement (line between two points)
+   * Add a distance measurement (polyline with 2+ points)
+   * Supports both simple two-point lines and multi-point polylines.
    * Note: 3D point markers are replaced with HTML overlays (MeasurementMarker.tsx)
    */
   addDistanceMeasurement(
     id: string,
     p1: THREE.Vector3,
     p2: THREE.Vector3,
-    data: Omit<MeasurementData, 'type' | 'points' | 'value'>
+    data: Omit<MeasurementData, 'type' | 'points' | 'value'>,
+    additionalPoints?: THREE.Vector3[]
   ): THREE.Group {
     // Remove existing measurement with same ID
     if (this.measurements.has(id)) {
       this.removeMeasurement(id);
     }
 
-    // Convert world positions to parent's local space
-    const localP1 = p1.clone();
-    const localP2 = p2.clone();
-    this.parentObject.worldToLocal(localP1);
-    this.parentObject.worldToLocal(localP2);
+    // Build points array: p1, p2, then any additional points
+    const worldPoints = [p1, p2, ...(additionalPoints || [])];
 
-    const distance = MeasurementCalculator.calculateDistance(localP1, localP2);
+    // Convert world positions to parent's local space
+    const localPoints = worldPoints.map(p => {
+      const localP = p.clone();
+      this.parentObject.worldToLocal(localP);
+      return localP;
+    });
+
+    // Calculate total distance (sum of all segments)
+    let totalDistance = 0;
+    for (let i = 0; i < localPoints.length - 1; i++) {
+      totalDistance += MeasurementCalculator.calculateDistance(localPoints[i], localPoints[i + 1]);
+    }
 
     const group = new THREE.Group();
     group.name = `measurement-${id}`;
 
-    // Create thick line using Line2 with outline for visibility against splats
-    const lineGeometry = new LineGeometry();
-    lineGeometry.setPositions([localP1.x, localP1.y, localP1.z, localP2.x, localP2.y, localP2.z]);
+    // Create separate Line2 objects for each segment (enables per-segment dashing)
+    for (let i = 0; i < localPoints.length - 1; i++) {
+      const p1 = localPoints[i];
+      const p2 = localPoints[i + 1];
+      const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
 
-    // Outline line - BLACK, slightly thicker behind white line
-    const outlineGeometry = new LineGeometry();
-    outlineGeometry.setPositions([localP1.x, localP1.y, localP1.z, localP2.x, localP2.y, localP2.z]);
+      // Outline line - BLACK, slightly thicker behind white line
+      const outlineGeometry = new LineGeometry();
+      outlineGeometry.setPositions(segmentPositions);
 
-    const outlineMaterial = new LineMaterial({
-      color: 0x000000,   // Black outline
-      linewidth: this.config.lineWidth + 3,  // Thicker than main line
-      resolution: this.resolution,
-      polygonOffset: true,
-      polygonOffsetFactor: -0.5,  // Slightly behind main line
-      polygonOffsetUnits: -0.5,
-      depthWrite: false,
-      transparent: true,
-    });
+      const outlineMaterial = new LineMaterial({
+        color: 0x000000,   // Black outline
+        linewidth: this.config.lineWidth + 3,  // Thicker than main line
+        resolution: this.resolution,
+        polygonOffset: true,
+        polygonOffsetFactor: -0.5,  // Slightly behind main line
+        polygonOffsetUnits: -0.5,
+        depthWrite: false,
+        transparent: true,
+      });
 
-    const outlineLine = new Line2(outlineGeometry, outlineMaterial);
-    outlineLine.computeLineDistances();
-    outlineLine.name = 'measurement-outline';
-    outlineLine.renderOrder = 99;  // Render just before white line
-    group.add(outlineLine);
+      const outlineLine = new Line2(outlineGeometry, outlineMaterial);
+      outlineLine.computeLineDistances();
+      outlineLine.name = `measurement-outline-${i}`;
+      outlineLine.renderOrder = 99;  // Render just before white line
+      group.add(outlineLine);
 
-    // Main measurement line - WHITE with polygon offset for z-fighting
-    const lineMaterial = new LineMaterial({
-      color: 0xFFFFFF,  // White for visibility
-      linewidth: this.config.lineWidth,
-      resolution: this.resolution,
-      polygonOffset: true,
-      polygonOffsetFactor: -1.0,  // Push forward in depth
-      polygonOffsetUnits: -1.0,
-      depthWrite: false,  // Don't occlude splat behind
-      transparent: true,
-    });
+      // Main measurement line - WHITE with polygon offset for z-fighting
+      const lineGeometry = new LineGeometry();
+      lineGeometry.setPositions(segmentPositions);
 
-    const line = new Line2(lineGeometry, lineMaterial);
-    line.computeLineDistances();
-    line.name = 'measurement-line';
-    line.renderOrder = 100;  // Render after splat
-    group.add(line);
+      const lineMaterial = new LineMaterial({
+        color: 0xFFFFFF,  // White for visibility
+        linewidth: this.config.lineWidth,
+        resolution: this.resolution,
+        polygonOffset: true,
+        polygonOffsetFactor: -1.0,  // Push forward in depth
+        polygonOffsetUnits: -1.0,
+        depthWrite: false,  // Don't occlude splat behind
+        transparent: true,
+      });
+
+      const line = new Line2(lineGeometry, lineMaterial);
+      line.computeLineDistances();
+      line.name = `measurement-line-${i}`;
+      line.renderOrder = 100;  // Render after splat
+      group.add(line);
+
+      // Store segment reference for dashing control
+      const segmentKey = `${id}-${i}`;
+      this.segmentLines.set(segmentKey, { outline: outlineLine, main: line });
+    }
 
     // Note: 3D endpoint spheres removed - using HTML overlays instead
     // Note: Labels removed - values shown in MeasurementsTab UI panel
@@ -450,8 +538,8 @@ export class MeasurementRenderer {
       data: {
         ...data,
         type: 'distance' as MeasurementType,
-        points: [localP1.clone(), localP2.clone()],
-        value: distance,
+        points: localPoints.map(p => p.clone()),
+        value: totalDistance,
       },
     };
 
@@ -491,54 +579,58 @@ export class MeasurementRenderer {
     const group = new THREE.Group();
     group.name = `measurement-${id}`;
 
-    // Create polygon outline using Line2 for thick lines with black outline for visibility
-    const outlinePoints = [...localPoints, localPoints[0]]; // Close the polygon
-    const positions: number[] = [];
-    outlinePoints.forEach(p => {
-      positions.push(p.x, p.y, p.z);
-    });
+    // Create separate Line2 objects for each segment of the polygon (enables per-segment dashing)
+    for (let i = 0; i < localPoints.length; i++) {
+      const p1 = localPoints[i];
+      const p2 = localPoints[(i + 1) % localPoints.length]; // Wrap around to close polygon
+      const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
 
-    // Black outline (behind white line)
-    const blackOutlineGeometry = new LineGeometry();
-    blackOutlineGeometry.setPositions(positions);
+      // Black outline (behind white line)
+      const blackOutlineGeometry = new LineGeometry();
+      blackOutlineGeometry.setPositions(segmentPositions);
 
-    const blackOutlineMaterial = new LineMaterial({
-      color: 0x000000,  // Black outline
-      linewidth: this.config.lineWidth + 3,  // Thicker than main line
-      resolution: this.resolution,
-      polygonOffset: true,
-      polygonOffsetFactor: -0.5,
-      polygonOffsetUnits: -0.5,
-      depthWrite: false,
-      transparent: true,
-    });
+      const blackOutlineMaterial = new LineMaterial({
+        color: 0x000000,  // Black outline
+        linewidth: this.config.lineWidth + 3,  // Thicker than main line
+        resolution: this.resolution,
+        polygonOffset: true,
+        polygonOffsetFactor: -0.5,
+        polygonOffsetUnits: -0.5,
+        depthWrite: false,
+        transparent: true,
+      });
 
-    const blackOutline = new Line2(blackOutlineGeometry, blackOutlineMaterial);
-    blackOutline.computeLineDistances();
-    blackOutline.name = 'area-black-outline';
-    blackOutline.renderOrder = 99;
-    group.add(blackOutline);
+      const blackOutline = new Line2(blackOutlineGeometry, blackOutlineMaterial);
+      blackOutline.computeLineDistances();
+      blackOutline.name = `area-black-outline-${i}`;
+      blackOutline.renderOrder = 99;
+      group.add(blackOutline);
 
-    // White outline (main visible line)
-    const outlineGeometry = new LineGeometry();
-    outlineGeometry.setPositions(positions);
+      // White outline (main visible line)
+      const outlineGeometry = new LineGeometry();
+      outlineGeometry.setPositions(segmentPositions);
 
-    const outlineMaterial = new LineMaterial({
-      color: 0xFFFFFF,  // White for visibility
-      linewidth: this.config.lineWidth,
-      resolution: this.resolution,
-      polygonOffset: true,
-      polygonOffsetFactor: -1.0,
-      polygonOffsetUnits: -1.0,
-      depthWrite: false,
-      transparent: true,
-    });
+      const outlineMaterial = new LineMaterial({
+        color: 0xFFFFFF,  // White for visibility
+        linewidth: this.config.lineWidth,
+        resolution: this.resolution,
+        polygonOffset: true,
+        polygonOffsetFactor: -1.0,
+        polygonOffsetUnits: -1.0,
+        depthWrite: false,
+        transparent: true,
+      });
 
-    const outline = new Line2(outlineGeometry, outlineMaterial);
-    outline.computeLineDistances();
-    outline.name = 'area-outline';
-    outline.renderOrder = 100;
-    group.add(outline);
+      const outline = new Line2(outlineGeometry, outlineMaterial);
+      outline.computeLineDistances();
+      outline.name = `area-outline-${i}`;
+      outline.renderOrder = 100;
+      group.add(outline);
+
+      // Store segment reference for dashing control
+      const segmentKey = `${id}-${i}`;
+      this.segmentLines.set(segmentKey, { outline: blackOutline, main: outline });
+    }
 
     // Create semi-transparent fill using a mesh (in local space)
     const fillGeometry = this.createPolygonGeometry(localPoints);
@@ -679,6 +771,15 @@ export class MeasurementRenderer {
     // Remove from parent object
     this.parentObject.remove(group);
 
+    // Clean up segment line references
+    const data = group.userData.data as MeasurementData;
+    const segmentCount = data.type === 'distance'
+      ? data.points.length - 1
+      : data.points.length;
+    for (let i = 0; i < segmentCount; i++) {
+      this.segmentLines.delete(`${id}-${i}`);
+    }
+
     // Dispose geometries and materials
     group.traverse((child) => {
       if (child instanceof THREE.Mesh) {
@@ -791,21 +892,86 @@ export class MeasurementRenderer {
   }
 
   /**
-   * Show a preview line while measuring distance
-   * Uses animated Line2 for high visibility (pulsing opacity)
+   * Set a single segment to dashed or solid style
+   * @param measurementId The measurement ID
+   * @param segmentIndex The segment index (0-based)
+   * @param dashed Whether to show dashed style
    */
-  showDistancePreview(p1: THREE.Vector3, p2: THREE.Vector3): void {
-    this.clearPreview();
+  setSegmentDashed(measurementId: string, segmentIndex: number, dashed: boolean): void {
+    const key = `${measurementId}-${segmentIndex}`;
+    const segment = this.segmentLines.get(key);
+    if (!segment) return;
 
-    // Use full line length to cursor (magnifier hidden during preview drawing)
-    const endPoint = p2.clone();
+    // Apply dashed style to both outline and main line
+    [segment.outline, segment.main].forEach((line) => {
+      const material = line.material as LineMaterial;
+      material.dashed = dashed;
+      if (dashed) {
+        material.dashSize = 0.05;
+        material.gapSize = 0.03;
+      }
+      material.needsUpdate = true;
+      line.computeLineDistances();
+    });
+  }
+
+  /**
+   * Set all segments of a measurement to dashed or solid style
+   * @param measurementId The measurement ID
+   * @param dashed Whether to show dashed style
+   */
+  setMeasurementDashed(measurementId: string, dashed: boolean): void {
+    const group = this.measurements.get(measurementId);
+    if (!group) return;
+
+    const data = group.userData.data as MeasurementData;
+    const segmentCount = data.type === 'distance'
+      ? data.points.length - 1
+      : data.points.length; // Area has segments equal to point count (closed polygon)
+
+    for (let i = 0; i < segmentCount; i++) {
+      this.setSegmentDashed(measurementId, i, dashed);
+    }
+  }
+
+  /**
+   * Show a preview line while measuring distance
+   * Supports both simple two-point preview and polyline preview with multiple placed points.
+   * Uses animated Line2 for high visibility (pulsing opacity)
+   *
+   * @param p1OrPoints - Either the first point (legacy) or an array of all placed points
+   * @param p2OrCursor - Either the second point (legacy) or the cursor position
+   */
+  showDistancePreview(p1OrPoints: THREE.Vector3 | THREE.Vector3[], p2OrCursor: THREE.Vector3): void {
+    this.clearPreview();
 
     this.previewGroup = new THREE.Group();
     this.previewGroup.name = 'measurement-preview';
 
+    // Build positions array
+    const positions: number[] = [];
+
+    if (Array.isArray(p1OrPoints)) {
+      // Polyline mode: array of placed points + cursor
+      const placedPoints = p1OrPoints;
+      const cursorPoint = p2OrCursor;
+
+      // Add all placed points
+      placedPoints.forEach(p => {
+        positions.push(p.x, p.y, p.z);
+      });
+      // Add cursor as the end point
+      positions.push(cursorPoint.x, cursorPoint.y, cursorPoint.z);
+    } else {
+      // Legacy two-point mode
+      const p1 = p1OrPoints;
+      const p2 = p2OrCursor;
+      positions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+    }
+
     // Create thin animated Line2 for visibility
     const lineGeometry = new LineGeometry();
-    lineGeometry.setPositions([p1.x, p1.y, p1.z, endPoint.x, endPoint.y, endPoint.z]);
+    lineGeometry.setPositions(positions);
 
     // Main preview line - white dashed, thin
     this.previewLineMaterial = new LineMaterial({
@@ -1017,41 +1183,81 @@ export class MeasurementRenderer {
     data.points[pointIndex] = localPosition.clone();
 
     // Recalculate value
-    if (data.type === 'distance' && data.points.length === 2) {
-      data.value = MeasurementCalculator.calculateDistance(data.points[0], data.points[1]);
+    if (data.type === 'distance' && data.points.length >= 2) {
+      // Sum all segment lengths for polyline distance
+      let totalDistance = 0;
+      for (let i = 0; i < data.points.length - 1; i++) {
+        totalDistance += MeasurementCalculator.calculateDistance(data.points[i], data.points[i + 1]);
+      }
+      data.value = totalDistance;
     } else if (data.type === 'area' && data.points.length >= 3) {
       data.value = MeasurementCalculator.calculateArea(data.points);
     }
 
-    // Update line geometry
+    // Update line geometry for affected segments
     if (data.type === 'distance') {
-      const p1 = data.points[0];
-      const p2 = data.points[1];
+      // Update segments adjacent to the moved point
+      // Segment pointIndex-1 (if exists): connects point[pointIndex-1] to point[pointIndex]
+      // Segment pointIndex (if exists): connects point[pointIndex] to point[pointIndex+1]
+      const segmentsToUpdate: number[] = [];
+      if (pointIndex > 0) {
+        segmentsToUpdate.push(pointIndex - 1);
+      }
+      if (pointIndex < data.points.length - 1) {
+        segmentsToUpdate.push(pointIndex);
+      }
 
-      // Update both lines (outline and main)
-      group.traverse((child) => {
-        if (child instanceof Line2) {
-          const geometry = child.geometry as LineGeometry;
-          geometry.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]);
-          child.computeLineDistances();
+      for (const segIdx of segmentsToUpdate) {
+        const p1 = data.points[segIdx];
+        const p2 = data.points[segIdx + 1];
+        const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+        const segment = this.segmentLines.get(`${id}-${segIdx}`);
+        if (segment) {
+          // Update outline geometry
+          const outlineGeom = segment.outline.geometry as LineGeometry;
+          outlineGeom.setPositions(segmentPositions);
+          segment.outline.computeLineDistances();
+
+          // Update main line geometry
+          const mainGeom = segment.main.geometry as LineGeometry;
+          mainGeom.setPositions(segmentPositions);
+          segment.main.computeLineDistances();
         }
-      });
+      }
     } else if (data.type === 'area') {
       const points = data.points;
-      const outlinePoints = [...points, points[0]]; // Close the polygon
-      const positions: number[] = [];
-      outlinePoints.forEach(p => {
-        positions.push(p.x, p.y, p.z);
-      });
+      const n = points.length;
 
-      // Update outline lines
-      group.traverse((child) => {
-        if (child instanceof Line2) {
-          const geometry = child.geometry as LineGeometry;
-          geometry.setPositions(positions);
-          child.computeLineDistances();
+      // Update segments adjacent to the moved point
+      // Segment (pointIndex-1+n)%n: connects previous point to current
+      // Segment pointIndex: connects current point to next
+      const segmentsToUpdate = [
+        (pointIndex - 1 + n) % n,
+        pointIndex,
+      ];
+
+      for (const segIdx of segmentsToUpdate) {
+        const p1 = points[segIdx];
+        const p2 = points[(segIdx + 1) % n];
+        const segmentPositions = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+
+        const segment = this.segmentLines.get(`${id}-${segIdx}`);
+        if (segment) {
+          // Update outline geometry
+          const outlineGeom = segment.outline.geometry as LineGeometry;
+          outlineGeom.setPositions(segmentPositions);
+          segment.outline.computeLineDistances();
+
+          // Update main line geometry
+          const mainGeom = segment.main.geometry as LineGeometry;
+          mainGeom.setPositions(segmentPositions);
+          segment.main.computeLineDistances();
         }
-        // Update fill mesh
+      }
+
+      // Update fill mesh
+      group.traverse((child) => {
         if (child instanceof THREE.Mesh && child.name === 'area-fill') {
           const newFillGeometry = this.createPolygonGeometry(points);
           if (newFillGeometry) {

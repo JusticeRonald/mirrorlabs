@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -11,6 +12,12 @@ export interface MeasurementLabelData {
   value: string;
   type: 'distance' | 'area' | 'segment';
   isPreview?: boolean;
+  /** Parent measurement ID for delete operations */
+  measurementId?: string;
+  /** Segment index for segment-type labels */
+  segmentIndex?: number;
+  /** Whether the label can be deleted (permission-based) */
+  canDelete?: boolean;
 }
 
 interface MeasurementLabelProps {
@@ -28,6 +35,14 @@ interface MeasurementLabelProps {
   isPreview?: boolean;
   /** Label type for styling */
   type?: 'distance' | 'area' | 'segment';
+  /** Whether this label is currently hovered */
+  isHovered?: boolean;
+  /** Whether the label can be deleted */
+  canDelete?: boolean;
+  /** Callback when hover state changes */
+  onHover?: (hovered: boolean) => void;
+  /** Callback when delete is clicked */
+  onDelete?: () => void;
 }
 
 /**
@@ -36,6 +51,7 @@ interface MeasurementLabelProps {
  * Displays measurement values (distance, area) at specified positions.
  * Uses manual projection from 3D to screen space.
  * Scales based on camera distance for readability.
+ * Shows delete button on hover when canDelete is true.
  */
 export function MeasurementLabel({
   position,
@@ -45,6 +61,10 @@ export function MeasurementLabel({
   containerHeight,
   isPreview = false,
   type = 'distance',
+  isHovered = false,
+  canDelete = false,
+  onHover,
+  onDelete,
 }: MeasurementLabelProps) {
   // Project to screen coordinates
   const vector = position.clone().project(camera);
@@ -73,23 +93,44 @@ export function MeasurementLabel({
   const distance = camera.position.distanceTo(position);
   const scaledFontSize = Math.max(10, Math.min(14, 100 / distance));
 
+  // Interactive labels (non-preview, can delete)
+  const isInteractive = !isPreview && canDelete;
+
   return (
     <div
-      className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+      className={cn(
+        'absolute transform -translate-x-1/2 -translate-y-1/2',
+        isInteractive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'
+      )}
       style={{ left: screenX, top: screenY }}
+      onMouseEnter={isInteractive ? () => onHover?.(true) : undefined}
+      onMouseLeave={isInteractive ? () => onHover?.(false) : undefined}
     >
       <div
         className={cn(
-          'px-2 py-1 rounded-md font-mono shadow-lg whitespace-nowrap',
-          'border backdrop-blur-sm',
+          'flex items-center gap-1 px-2 py-1 rounded-md font-mono shadow-lg whitespace-nowrap',
+          'border backdrop-blur-sm transition-all duration-150',
           isPreview
             ? 'bg-blue-500/90 border-blue-400/50 text-white'
             : 'bg-neutral-900/90 border-neutral-600/50 text-white',
-          type === 'area' && 'font-semibold'
+          type === 'area' && 'font-semibold',
+          isHovered && !isPreview && 'ring-1 ring-white/50 border-neutral-500/70'
         )}
         style={{ fontSize: `${scaledFontSize}px` }}
       >
-        {value}
+        <span>{value}</span>
+        {isHovered && canDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete?.();
+            }}
+            className="ml-1 p-0.5 rounded hover:bg-red-500/50 transition-colors"
+            title="Delete"
+          >
+            <Trash2 className="w-3 h-3 text-red-400" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -102,6 +143,12 @@ interface MeasurementLabelOverlayProps {
   camera: THREE.PerspectiveCamera | null;
   /** Container element for dimension calculation */
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** Currently hovered label ID */
+  hoveredLabelId?: string | null;
+  /** Callback when label hover state changes */
+  onLabelHover?: (labelId: string | null) => void;
+  /** Callback when label delete is clicked */
+  onLabelDelete?: (label: MeasurementLabelData) => void;
 }
 
 /**
@@ -109,11 +156,15 @@ interface MeasurementLabelOverlayProps {
  *
  * Uses requestAnimationFrame to update label positions as camera moves.
  * Renders labels at measurement midpoints and centroids.
+ * Supports hover interactions for delete functionality.
  */
 export function MeasurementLabelOverlay({
   labels,
   camera,
   containerRef,
+  hoveredLabelId,
+  onLabelHover,
+  onLabelDelete,
 }: MeasurementLabelOverlayProps) {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   // Force re-render on each animation frame to update label positions
@@ -172,6 +223,10 @@ export function MeasurementLabelOverlay({
           containerHeight={dimensions.height}
           isPreview={label.isPreview}
           type={label.type}
+          isHovered={hoveredLabelId === label.id}
+          canDelete={label.canDelete}
+          onHover={(hovered) => onLabelHover?.(hovered ? label.id : null)}
+          onDelete={() => onLabelDelete?.(label)}
         />
       ))}
     </div>

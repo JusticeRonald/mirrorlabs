@@ -60,6 +60,13 @@ interface ViewerContextType {
   clearMeasurementPointSelection: () => void;
   updateMeasurementPoint: (measurementId: string, pointIndex: number, newPosition: THREE.Vector3) => void;
 
+  // Measurement segment deletion (returns action taken and new measurement ID if split)
+  removeSegmentFromMeasurement: (measurementId: string, segmentIndex: number) => {
+    action: 'deleted' | 'truncated' | 'split';
+    originalMeasurement?: Measurement;
+    newMeasurement?: Measurement;
+  };
+
   // Annotations
   addAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt'>) => void;
   removeAnnotation: (id: string) => void;
@@ -282,13 +289,17 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       const { type, points } = prev.pendingMeasurement;
 
       // Validate point count
-      if (type === 'distance' && points.length !== 2) return prev;
+      // Distance polylines require 2+ points
+      if (type === 'distance' && points.length < 2) return prev;
       if (type === 'area' && points.length < 3) return prev;
 
       // Calculate value based on type
       let value = 0;
       if (type === 'distance') {
-        value = points[0].distanceTo(points[1]);
+        // Sum all segment lengths for polyline distance
+        for (let i = 0; i < points.length - 1; i++) {
+          value += points[i].distanceTo(points[i + 1]);
+        }
       } else if (type === 'area') {
         // Use cross product method for area calculation
         const n = points.length;
@@ -371,8 +382,11 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
 
         // Recalculate value based on measurement type
         let newValue = 0;
-        if (m.type === 'distance' && newPoints.length === 2) {
-          newValue = newPoints[0].distanceTo(newPoints[1]);
+        if (m.type === 'distance' && newPoints.length >= 2) {
+          // Sum all segment lengths for polyline distance
+          for (let i = 0; i < newPoints.length - 1; i++) {
+            newValue += newPoints[i].distanceTo(newPoints[i + 1]);
+          }
         } else if (m.type === 'area' && newPoints.length >= 3) {
           // Use cross product method for area calculation
           const n = newPoints.length;
@@ -391,6 +405,140 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
       }),
     }));
   }, []);
+
+  // Helper to calculate polyline total distance
+  const calculatePolylineValue = useCallback((points: THREE.Vector3[]): number => {
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += points[i].distanceTo(points[i + 1]);
+    }
+    return total;
+  }, []);
+
+  // Remove a segment from a measurement (for segment deletion from labels)
+  // Returns action type and measurement objects for Supabase persistence
+  // - 'deleted': entire measurement removed (2-point line or segment makes it invalid)
+  // - 'truncated': first or last segment removed, measurement shortened
+  // - 'split': middle segment removed, measurement split into two
+  const removeSegmentFromMeasurement = useCallback((
+    measurementId: string,
+    segmentIndex: number
+  ): {
+    action: 'deleted' | 'truncated' | 'split';
+    originalMeasurement?: Measurement;
+    newMeasurement?: Measurement;
+  } => {
+    let result: {
+      action: 'deleted' | 'truncated' | 'split';
+      originalMeasurement?: Measurement;
+      newMeasurement?: Measurement;
+    } = { action: 'deleted' };
+
+    setState(prev => {
+      const measurement = prev.measurements.find(m => m.id === measurementId);
+      if (!measurement) return prev;
+
+      const pointCount = measurement.points.length;
+      const segmentCount = pointCount - 1;
+
+      // Validate segment index
+      if (segmentIndex < 0 || segmentIndex >= segmentCount) return prev;
+
+      // Case 1: Single segment (2 points) → delete entire measurement
+      if (pointCount === 2) {
+        result = { action: 'deleted', originalMeasurement: measurement };
+        return {
+          ...prev,
+          measurements: prev.measurements.filter(m => m.id !== measurementId),
+          selectedMeasurementId: prev.selectedMeasurementId === measurementId ? null : prev.selectedMeasurementId,
+          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId ? null : prev.selectedMeasurementPoint,
+        };
+      }
+
+      // Case 2: First segment (index 0) → truncate from start (keep points[1..n])
+      if (segmentIndex === 0) {
+        const newPoints = measurement.points.slice(1);
+        const newValue = calculatePolylineValue(newPoints);
+        const updatedMeasurement: Measurement = { ...measurement, points: newPoints, value: newValue };
+        result = { action: 'truncated', originalMeasurement: updatedMeasurement };
+        return {
+          ...prev,
+          measurements: prev.measurements.map(m =>
+            m.id === measurementId ? updatedMeasurement : m
+          ),
+          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId
+            ? null
+            : prev.selectedMeasurementPoint,
+        };
+      }
+
+      // Case 3: Last segment → truncate from end (keep points[0..n-1])
+      if (segmentIndex === segmentCount - 1) {
+        const newPoints = measurement.points.slice(0, -1);
+        const newValue = calculatePolylineValue(newPoints);
+        const updatedMeasurement: Measurement = { ...measurement, points: newPoints, value: newValue };
+        result = { action: 'truncated', originalMeasurement: updatedMeasurement };
+        return {
+          ...prev,
+          measurements: prev.measurements.map(m =>
+            m.id === measurementId ? updatedMeasurement : m
+          ),
+          selectedMeasurementPoint: prev.selectedMeasurementPoint?.measurementId === measurementId
+            ? null
+            : prev.selectedMeasurementPoint,
+        };
+      }
+
+      // Case 4: Middle segment → split into two measurements
+      // Segment N connects points[N] to points[N+1]
+      // First half: points[0..segmentIndex]
+      // Second half: points[segmentIndex+1..n-1]
+      const firstHalfPoints = measurement.points.slice(0, segmentIndex + 1);
+      const secondHalfPoints = measurement.points.slice(segmentIndex + 1);
+
+      // First half becomes the updated original measurement
+      const firstHalfValue = calculatePolylineValue(firstHalfPoints);
+      const updatedMeasurement: Measurement = {
+        ...measurement,
+        points: firstHalfPoints,
+        value: firstHalfValue,
+      };
+
+      // Second half becomes a new measurement
+      const secondHalfValue = calculatePolylineValue(secondHalfPoints);
+      const newMeasurement: Measurement = {
+        id: `measurement-${Date.now()}`,
+        type: measurement.type,
+        points: secondHalfPoints,
+        value: secondHalfValue,
+        unit: measurement.unit,
+        createdBy: measurement.createdBy,
+        createdAt: new Date().toISOString(),
+        label: measurement.label ? `${measurement.label} (split)` : undefined,
+      };
+
+      result = {
+        action: 'split',
+        originalMeasurement: updatedMeasurement,
+        newMeasurement,
+      };
+
+      return {
+        ...prev,
+        measurements: [
+          ...prev.measurements.map(m =>
+            m.id === measurementId ? updatedMeasurement : m
+          ),
+          newMeasurement,
+        ],
+        // Clear selection (segment no longer exists)
+        selectedMeasurementId: null,
+        selectedMeasurementPoint: null,
+      };
+    });
+
+    return result;
+  }, [calculatePolylineValue]);
 
   // Annotation actions
   const addAnnotation = useCallback((annotation: Omit<Annotation, 'id' | 'createdAt'>) => {
@@ -677,6 +825,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     selectMeasurementPoint,
     clearMeasurementPointSelection,
     updateMeasurementPoint,
+    removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,
     addAnnotationReply,
@@ -734,6 +883,7 @@ export const ViewerProvider = ({ children, userRole = 'viewer' }: ViewerProvider
     selectMeasurementPoint,
     clearMeasurementPointSelection,
     updateMeasurementPoint,
+    removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,
     addAnnotationReply,

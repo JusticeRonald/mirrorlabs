@@ -29,6 +29,7 @@ import {
   addAnnotationReply as addAnnotationReplyService,
   getScanMeasurements,
   createMeasurement as createMeasurementService,
+  updateMeasurement as updateMeasurementService,
   deleteMeasurement as deleteMeasurementService,
   getScanWaypoints,
   createWaypoint as createWaypointService,
@@ -124,6 +125,7 @@ const ViewerContent = () => {
     selectMeasurementPoint,
     clearMeasurementPointSelection,
     updateMeasurementPoint,
+    removeSegmentFromMeasurement,
     addAnnotation,
     removeAnnotation,
     updateAnnotationStatus,
@@ -201,6 +203,9 @@ const ViewerContent = () => {
   // Measurement preview cursor position (for showing preview line during placement)
   const [measurementCursorPosition, setMeasurementCursorPosition] = useState<THREE.Vector3 | null>(null);
 
+  // Hovered measurement label (for dashing and delete UI)
+  const [hoveredLabelId, setHoveredLabelId] = useState<string | null>(null);
+
   // Orbit state tracking (for freezing preview during camera drag)
   const [isOrbiting, setIsOrbiting] = useState(false);
 
@@ -222,65 +227,128 @@ const ViewerContent = () => {
     // Labels for finalized measurements
     for (const measurement of state.measurements) {
       const unit = (measurement.unit || 'ft') as MeasurementUnit;
+      const canDelete = permissions.canMeasure;
 
       if (measurement.type === 'distance') {
-        // Get midpoint position from renderer (handles transform parenting)
-        const position = renderer?.getDistanceLabelPosition(measurement.id);
-        if (position) {
-          labels.push({
-            id: `${measurement.id}-label`,
-            position,
-            value: MeasurementCalculator.formatDistance(measurement.value, unit),
-            type: 'distance',
-          });
-        }
-      } else if (measurement.type === 'area') {
-        // Get centroid and segment positions from renderer
-        const positions = renderer?.getAreaLabelPositions(measurement.id);
+        // Get segment midpoint positions from renderer (handles polylines and transform parenting)
+        const positions = renderer?.getDistanceLabelPositions(measurement.id);
         if (positions) {
-          // Centroid label (total area)
-          labels.push({
-            id: `${measurement.id}-area`,
-            position: positions.centroid,
-            value: MeasurementCalculator.formatArea(measurement.value, unit),
-            type: 'area',
-          });
-          // Segment labels (each side length)
+          // Add label for each segment (can delete individual segments)
           positions.segments.forEach((seg, i) => {
             labels.push({
               id: `${measurement.id}-seg-${i}`,
               position: seg.position,
               value: MeasurementCalculator.formatDistance(seg.length, unit),
               type: 'segment',
+              measurementId: measurement.id,
+              segmentIndex: i,
+              canDelete, // Can delete segment (removes start point)
+            });
+          });
+
+          // Add total distance label if polyline has more than one segment
+          if (positions.segments.length > 1) {
+            // Position total label at the midpoint of the entire polyline (first segment for now)
+            // Could be improved to position at centroid or endpoint
+            labels.push({
+              id: `${measurement.id}-total`,
+              position: positions.segments[0].position.clone().add(new THREE.Vector3(0, 0.15, 0)), // Offset slightly above
+              value: `Total: ${MeasurementCalculator.formatDistance(positions.totalLength, unit)}`,
+              type: 'distance',
+              measurementId: measurement.id,
+              canDelete, // Can delete entire measurement from total label
+            });
+          }
+        }
+      } else if (measurement.type === 'area') {
+        // Get centroid and segment positions from renderer
+        const positions = renderer?.getAreaLabelPositions(measurement.id);
+        if (positions) {
+          // Centroid label (total area) - can delete entire measurement
+          labels.push({
+            id: `${measurement.id}-area`,
+            position: positions.centroid,
+            value: MeasurementCalculator.formatArea(measurement.value, unit),
+            type: 'area',
+            measurementId: measurement.id,
+            canDelete, // Can delete entire area measurement
+          });
+          // Segment labels (each side length) - cannot delete individual sides
+          positions.segments.forEach((seg, i) => {
+            labels.push({
+              id: `${measurement.id}-seg-${i}`,
+              position: seg.position,
+              value: MeasurementCalculator.formatDistance(seg.length, unit),
+              type: 'segment',
+              measurementId: measurement.id,
+              segmentIndex: i,
+              canDelete: false, // Cannot delete individual polygon sides
             });
           });
         }
       }
     }
 
-    // Preview label (during measurement placement)
+    // Preview labels (during measurement placement)
     if (state.pendingMeasurement && measurementCursorPosition && !isOrbiting) {
       const points = state.pendingMeasurement.points;
+      const unit = state.measurementUnit || 'ft';
+
       if (points.length > 0) {
+        // Labels for already-placed segments (if polyline has 2+ placed points)
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const midpoint = MeasurementCalculator.calculateMidpoint(p1, p2);
+          const distance = p1.distanceTo(p2);
+
+          labels.push({
+            id: `preview-seg-${i}`,
+            position: midpoint,
+            value: MeasurementCalculator.formatDistance(distance, unit as MeasurementUnit),
+            type: 'segment',
+            isPreview: true,
+          });
+        }
+
+        // Preview label for current segment (last placed point to cursor)
         const lastPoint = points[points.length - 1];
         const cursorPoint = measurementCursorPosition;
-
-        // Midpoint between last point and cursor
         const midpoint = MeasurementCalculator.calculateMidpoint(lastPoint, cursorPoint);
         const distance = lastPoint.distanceTo(cursorPoint);
 
         labels.push({
-          id: 'preview-label',
+          id: 'preview-cursor-label',
           position: midpoint,
-          value: MeasurementCalculator.formatDistance(distance, 'ft'),
+          value: MeasurementCalculator.formatDistance(distance, unit as MeasurementUnit),
           type: 'distance',
           isPreview: true,
         });
+
+        // Running total label for polylines with 2+ placed points
+        if (points.length >= 2) {
+          // Calculate total so far (all placed segments + current segment to cursor)
+          let totalDistance = 0;
+          for (let i = 0; i < points.length - 1; i++) {
+            totalDistance += points[i].distanceTo(points[i + 1]);
+          }
+          totalDistance += lastPoint.distanceTo(cursorPoint);
+
+          // Position above the first segment midpoint
+          const firstMidpoint = MeasurementCalculator.calculateMidpoint(points[0], points[1]);
+          labels.push({
+            id: 'preview-total',
+            position: firstMidpoint.clone().add(new THREE.Vector3(0, 0.15, 0)),
+            value: `Total: ${MeasurementCalculator.formatDistance(totalDistance, unit as MeasurementUnit)}`,
+            type: 'distance',
+            isPreview: true,
+          });
+        }
       }
     }
 
     return labels;
-  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion]);
+  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion, permissions.canMeasure]);
 
   /**
    * Normalize a position to THREE.Vector3.
@@ -574,21 +642,34 @@ const ViewerContent = () => {
   // Handle point selection for measurements/annotations
   const handlePointSelect = useCallback(async (point: THREE.Vector3, isDoubleClick?: boolean) => {
     if (state.activeTool === 'distance') {
-      // Distance measurement: 2 points required
+      // Distance measurement: polyline with 2+ points
+      // Finalization options:
+      // 1. Double-click (requires 2+ points)
+      // 2. Press Enter (keyboard shortcut)
+      // 3. Escape cancels entire measurement
       if (!state.pendingMeasurement) {
         // Start a new distance measurement
         startMeasurement('distance');
         addMeasurementPoint(point);
-      } else if (state.pendingMeasurement.points.length === 1) {
-        // Second point: finalize the measurement
+      } else {
+        const pending = state.pendingMeasurement;
+
+        // Double-click: finalize if we have at least 2 points
+        if (isDoubleClick && pending.points.length >= 1) {
+          // Add the double-click point first
+          addMeasurementPoint(point);
+          // Use setTimeout to ensure state update completes before finalizing
+          setTimeout(async () => {
+            const measurement = finalizeMeasurement(currentUserId);
+            sceneManagerRef.current?.clearMeasurementPreview();
+            setMeasurementCursorPosition(null);
+            await persistMeasurement(measurement);
+          }, 0);
+          return;
+        }
+
+        // Normal click: add another point to the polyline
         addMeasurementPoint(point);
-        // Use setTimeout to ensure state update completes before finalizing
-        setTimeout(async () => {
-          const measurement = finalizeMeasurement(currentUserId);
-          sceneManagerRef.current?.clearMeasurementPreview();
-          setMeasurementCursorPosition(null);
-          await persistMeasurement(measurement);
-        }, 0);
       }
     } else if (state.activeTool === 'area') {
       // Area measurement: 3+ points required
@@ -631,8 +712,8 @@ const ViewerContent = () => {
     setSceneManagerReady(true);  // Trigger sync effects to re-run
   }, []);
 
-  // Track rendered measurements to sync with scene
-  const renderedMeasurementsRef = useRef<Set<string>>(new Set());
+  // Track rendered measurements to sync with scene (ID -> point count for change detection)
+  const renderedMeasurementsRef = useRef<Map<string, number>>(new Map());
 
   // Track rendered annotations to sync with scene
   const renderedAnnotationsRef = useRef<Set<string>>(new Set());
@@ -676,47 +757,64 @@ const ViewerContent = () => {
     if (!sceneManagerRef.current) return;
 
     const manager = sceneManagerRef.current;
-    const renderedIds = renderedMeasurementsRef.current;
+    const renderedMap = renderedMeasurementsRef.current;
     const currentIds = new Set(state.measurements.map(m => m.id));
 
-    // Add new measurements to scene
-    for (const measurement of state.measurements) {
-      if (!renderedIds.has(measurement.id)) {
-        if (measurement.type === 'distance' && measurement.points.length === 2) {
-          manager.addDistanceMeasurement(
-            measurement.id,
-            measurement.points[0],
-            measurement.points[1],
-            {
-              id: measurement.id,
-              unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
-              label: measurement.label,
-              createdBy: measurement.createdBy,
-              createdAt: measurement.createdAt,
-            }
-          );
-        } else if (measurement.type === 'area' && measurement.points.length >= 3) {
-          manager.addAreaMeasurement(
-            measurement.id,
-            measurement.points,
-            {
-              id: measurement.id,
-              unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
-              label: measurement.label,
-              createdBy: measurement.createdBy,
-              createdAt: measurement.createdAt,
-            }
-          );
-        }
-        renderedIds.add(measurement.id);
+    // Helper to add a measurement to the scene
+    const addMeasurementToScene = (measurement: typeof state.measurements[0]) => {
+      if (measurement.type === 'distance' && measurement.points.length >= 2) {
+        // Pass first two points directly, additional points as array
+        const [p1, p2, ...additionalPoints] = measurement.points;
+        manager.addDistanceMeasurement(
+          measurement.id,
+          p1,
+          p2,
+          {
+            id: measurement.id,
+            unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
+            label: measurement.label,
+            createdBy: measurement.createdBy,
+            createdAt: measurement.createdAt,
+          },
+          additionalPoints.length > 0 ? additionalPoints : undefined
+        );
+      } else if (measurement.type === 'area' && measurement.points.length >= 3) {
+        manager.addAreaMeasurement(
+          measurement.id,
+          measurement.points,
+          {
+            id: measurement.id,
+            unit: (measurement.unit as 'ft' | 'm' | 'in' | 'cm') || 'ft',
+            label: measurement.label,
+            createdBy: measurement.createdBy,
+            createdAt: measurement.createdAt,
+          }
+        );
       }
+      renderedMap.set(measurement.id, measurement.points.length);
+    };
+
+    // Process measurements: add new, update changed, track existing
+    for (const measurement of state.measurements) {
+      const prevPointCount = renderedMap.get(measurement.id);
+      const currPointCount = measurement.points.length;
+
+      if (prevPointCount === undefined) {
+        // New measurement - add it
+        addMeasurementToScene(measurement);
+      } else if (prevPointCount !== currPointCount) {
+        // Points changed - remove and re-add to rebuild geometry
+        manager.removeMeasurement(measurement.id);
+        addMeasurementToScene(measurement);
+      }
+      // else: unchanged, skip
     }
 
     // Remove deleted measurements from scene
-    for (const id of renderedIds) {
+    for (const id of renderedMap.keys()) {
       if (!currentIds.has(id)) {
         manager.removeMeasurement(id);
-        renderedIds.delete(id);
+        renderedMap.delete(id);
       }
     }
   }, [state.measurements, sceneManagerReady]);
@@ -738,8 +836,8 @@ const ViewerContent = () => {
 
     if (pending && pending.points.length >= 1 && measurementCursorPosition) {
       if (pending.type === 'distance') {
-        // Distance: show preview line from first point to cursor
-        sceneManagerRef.current.showDistancePreview(pending.points[0], measurementCursorPosition);
+        // Distance: show preview polyline from all placed points to cursor
+        sceneManagerRef.current.showDistancePreview(pending.points, measurementCursorPosition);
       } else if (pending.type === 'area') {
         // Area: show preview polygon with cursor as potential next point
         sceneManagerRef.current.showAreaPreview(pending.points, measurementCursorPosition);
@@ -749,6 +847,44 @@ const ViewerContent = () => {
       sceneManagerRef.current.clearMeasurementPreview();
     }
   }, [state.pendingMeasurement, measurementCursorPosition, isOrbiting]);
+
+  // Hover effect for measurement labels (dashing lines when hovered)
+  useEffect(() => {
+    const renderer = sceneManagerRef.current?.getMeasurementRenderer();
+    if (!renderer) return;
+
+    // Parse the hovered label ID to determine which lines to dash
+    if (hoveredLabelId) {
+      // Label IDs are formatted as:
+      // - `${measurementId}-seg-${index}` for segments
+      // - `${measurementId}-area` for area centroid
+      // - `${measurementId}-total` for distance total
+      const label = measurementLabels.find(l => l.id === hoveredLabelId);
+      if (label?.measurementId) {
+        if (label.type === 'area' || label.type === 'distance') {
+          // Area centroid or distance total - dash ALL lines of the measurement
+          renderer.setMeasurementDashed(label.measurementId, true);
+        } else if (label.type === 'segment' && label.segmentIndex !== undefined) {
+          // Segment label - dash only that segment
+          renderer.setSegmentDashed(label.measurementId, label.segmentIndex, true);
+        }
+      }
+    }
+
+    // Cleanup: reset dashing when hover changes
+    return () => {
+      if (hoveredLabelId) {
+        const label = measurementLabels.find(l => l.id === hoveredLabelId);
+        if (label?.measurementId) {
+          if (label.type === 'area' || label.type === 'distance') {
+            renderer.setMeasurementDashed(label.measurementId, false);
+          } else if (label.type === 'segment' && label.segmentIndex !== undefined) {
+            renderer.setSegmentDashed(label.measurementId, label.segmentIndex, false);
+          }
+        }
+      }
+    };
+  }, [hoveredLabelId, measurementLabels]);
 
   // Transform mode change handler
   const handleTransformModeChange = useCallback((mode: TransformMode | null) => {
@@ -1038,8 +1174,15 @@ const ViewerContent = () => {
           setSplatViewMode(state.splatViewMode === 'model' ? 'pointcloud' : 'model');
           break;
         case 'enter':
-          // Enter to finalize area measurement (requires 3+ points)
-          if (state.pendingMeasurement?.type === 'area' && state.pendingMeasurement.points.length >= 3) {
+          // Enter to finalize measurement
+          // Distance polyline: requires 2+ points
+          // Area polygon: requires 3+ points
+          if (state.pendingMeasurement?.type === 'distance' && state.pendingMeasurement.points.length >= 2) {
+            const measurement = finalizeMeasurement(currentUserId);
+            sceneManagerRef.current?.clearMeasurementPreview();
+            setMeasurementCursorPosition(null);
+            persistMeasurement(measurement);
+          } else if (state.pendingMeasurement?.type === 'area' && state.pendingMeasurement.points.length >= 3) {
             const measurement = finalizeMeasurement(currentUserId);
             sceneManagerRef.current?.clearMeasurementPreview();
             setMeasurementCursorPosition(null);
@@ -1098,7 +1241,7 @@ const ViewerContent = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, state.splatViewMode, setActiveTool, setSplatViewMode, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
 
-  // Right-click detection for area measurement confirm
+  // Right-click detection for measurement confirm (area and distance polylines)
   // Pattern: Let OrbitControls pan, but detect quick taps on pointerup
   // Quick tap (< 200ms, < 3px movement) = confirm measurement
   // Hold/drag = pan camera (OrbitControls handles, pan was no-op on quick tap anyway)
@@ -1109,13 +1252,17 @@ const ViewerContent = () => {
     // Track right-click gesture with local variables (no refs needed)
     let rightClickStart: { time: number; x: number; y: number } | null = null;
 
-    const isAreaConfirmable = () =>
-      state.pendingMeasurement?.type === 'area' &&
-      state.pendingMeasurement.points.length >= 3;
+    const isMeasurementConfirmable = () => {
+      const pending = state.pendingMeasurement;
+      if (!pending) return false;
+      if (pending.type === 'area' && pending.points.length >= 3) return true;
+      if (pending.type === 'distance' && pending.points.length >= 2) return true;
+      return false;
+    };
 
     const handlePointerDown = (event: PointerEvent) => {
-      // Only track right-click when area is confirmable
-      if (event.button !== 2 || !isAreaConfirmable()) return;
+      // Only track right-click when measurement is confirmable
+      if (event.button !== 2 || !isMeasurementConfirmable()) return;
 
       // Record start position and time (don't block OrbitControls)
       rightClickStart = {
@@ -1133,7 +1280,7 @@ const ViewerContent = () => {
       rightClickStart = null;
 
       // Check if this was a quick tap with minimal movement
-      if (!isAreaConfirmable()) return;
+      if (!isMeasurementConfirmable()) return;
 
       const duration = Date.now() - start.time;
       const distance = Math.hypot(
@@ -1322,6 +1469,72 @@ const ViewerContent = () => {
   }, [removeMeasurement, clearMeasurementPointSelection]);
   handleMeasurementDeleteRef.current = handleMeasurementDelete;
 
+  // Handle measurement label delete (segments or entire measurement)
+  // Segment deletion behavior:
+  // - 2-point line: deleting the only segment removes entire measurement
+  // - First/last segment: truncates the measurement
+  // - Middle segment: splits into two separate measurements
+  const handleLabelDelete = useCallback(async (label: MeasurementLabelData) => {
+    // Clear hover state immediately
+    setHoveredLabelId(null);
+
+    if (!label.measurementId) return;
+
+    if (label.type === 'area' || label.type === 'distance') {
+      // Area centroid or distance total label - delete entire measurement
+      await handleMeasurementDelete(label.measurementId);
+    } else if (label.type === 'segment' && label.segmentIndex !== undefined) {
+      // Segment label - handle based on action type
+      const result = removeSegmentFromMeasurement(label.measurementId, label.segmentIndex);
+
+      if (!isSupabaseConfigured()) return;
+
+      try {
+        switch (result.action) {
+          case 'deleted':
+            // Entire measurement was removed (2-point line)
+            await deleteMeasurementService(label.measurementId);
+            break;
+
+          case 'truncated':
+            // Measurement was truncated (first or last segment removed)
+            if (result.originalMeasurement) {
+              await updateMeasurementService(label.measurementId, {
+                points_json: result.originalMeasurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                value: result.originalMeasurement.value,
+              });
+            }
+            break;
+
+          case 'split':
+            // Measurement was split into two (middle segment removed)
+            // Update original measurement with first half
+            if (result.originalMeasurement) {
+              await updateMeasurementService(label.measurementId, {
+                points_json: result.originalMeasurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                value: result.originalMeasurement.value,
+              });
+            }
+            // Create new measurement for second half
+            if (result.newMeasurement && scanId) {
+              await createMeasurementService({
+                scan_id: scanId,
+                type: result.newMeasurement.type,
+                points_json: result.newMeasurement.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                value: result.newMeasurement.value,
+                unit: result.newMeasurement.unit,
+                label: result.newMeasurement.label || null,
+                created_by: result.newMeasurement.createdBy,
+              });
+            }
+            break;
+        }
+      } catch {
+        // Error persisting to Supabase - local state already updated
+      }
+    }
+  }, [handleMeasurementDelete, removeSegmentFromMeasurement, scanId]);
+
   // Handle annotation reply with Supabase persistence
   const handleAnnotationReply = useCallback(async (annotationId: string, content: string) => {
     // Add to local state immediately
@@ -1500,6 +1713,9 @@ const ViewerContent = () => {
             labels={measurementLabels}
             camera={camera}
             containerRef={viewerContainerRef}
+            hoveredLabelId={hoveredLabelId}
+            onLabelHover={setHoveredLabelId}
+            onLabelDelete={handleLabelDelete}
           />
         )}
 
