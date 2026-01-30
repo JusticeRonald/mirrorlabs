@@ -300,7 +300,7 @@ const ViewerToolbar = ({
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent side="top">Splat Mode</TooltipContent>
+                <TooltipContent side="top">Splat Mode (P)</TooltipContent>
               </Tooltip>
               <PopoverContent side="top" align="center" className="w-44 p-1">
                 {([

@@ -163,11 +163,12 @@ const ViewerContent = () => {
   const [isDataLoading, setIsDataLoading] = useState(true);
 
   // Transform state
-  const [transformMode, setTransformMode] = useState<TransformMode | null>('rotate');
+  const [transformMode, setTransformMode] = useState<TransformMode | null>(null);
   const [initialTransform, setInitialTransform] = useState<SplatTransform | undefined>(undefined);
   const [currentTransform, setCurrentTransform] = useState<SplatTransform | null>(null);
   const [savedTransform, setSavedTransform] = useState<SplatTransform | null>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
+  const [sceneManagerReady, setSceneManagerReady] = useState(false);
   const resetViewFnRef = useRef<(() => void) | null>(null);
 
   // Refs for delete handlers (to avoid TDZ in keyboard handler useEffect)
@@ -556,6 +557,7 @@ const ViewerContent = () => {
   // Handle scene ready
   const handleSceneReady = useCallback((manager: SceneManager) => {
     sceneManagerRef.current = manager;
+    setSceneManagerReady(true);  // Trigger sync effects to re-run
   }, []);
 
   // Track rendered measurements to sync with scene
@@ -596,7 +598,7 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.annotations, scanId]);
+  }, [state.annotations, scanId, sceneManagerReady]);
 
   // Sync measurements with SceneManager
   useEffect(() => {
@@ -646,7 +648,7 @@ const ViewerContent = () => {
         renderedIds.delete(id);
       }
     }
-  }, [state.measurements]);
+  }, [state.measurements, sceneManagerReady]);
 
   // Sync measurement 3D visibility with state
   useEffect(() => {
@@ -959,6 +961,10 @@ const ViewerContent = () => {
           // H for clean view toggle (hide/show all layers)
           toggleCleanView();
           break;
+        case 'p':
+          // P for point cloud toggle
+          setSplatViewMode(state.splatViewMode === 'model' ? 'pointcloud' : 'model');
+          break;
         case 'enter':
           // Enter to finalize area measurement (requires 3+ points)
           if (state.pendingMeasurement?.type === 'area' && state.pendingMeasurement.points.length >= 3) {
@@ -1018,7 +1024,7 @@ const ViewerContent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, setActiveTool, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
+  }, [transformMode, toggleGrid, toggleCleanView, handleResetView, handleResetTransform, handleSaveCurrentView, state.activeTool, state.isAnnotationModalOpen, state.pendingMeasurement, state.selectedMeasurementPoint, state.selectedAnnotationId, state.isCollaborationPanelOpen, state.splatViewMode, setActiveTool, setSplatViewMode, cancelMeasurement, clearMeasurementPointSelection, selectAnnotation, closeCollaborationPanel, openCollaborationPanel, undoLastMeasurementPoint, finalizeMeasurement, currentUserId, persistMeasurement]);
 
   // Right-click detection for area measurement confirm
   // Pattern: Let OrbitControls pan, but detect quick taps on pointerup
