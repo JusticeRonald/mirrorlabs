@@ -31,7 +31,7 @@ export type MeasurementState = 'default' | 'hovered' | 'selected' | 'preview';
  */
 export const MEASUREMENT_COLORS = {
   distance: 0x3B82F6,      // Blue
-  area: 0x8B5CF6,          // Purple
+  area: 0x3B82F6,          // Blue (Tailwind blue-500)
   angle: 0xF59E0B,         // Amber
   preview: 0x94A3B8,       // Slate (for in-progress measurements)
   hover: 0x60A5FA,         // Lighter blue
@@ -54,7 +54,7 @@ export interface MeasurementConfig {
 
 const DEFAULT_CONFIG: MeasurementConfig = {
   lineWidth: 3,
-  areaFillOpacity: 0.35, // Increased from 0.2 for better visibility
+  areaFillOpacity: 0.45, // Slightly more visible
   hoverScale: 1.1,
   selectedScale: 1.2,
 };
