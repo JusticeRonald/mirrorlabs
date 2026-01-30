@@ -694,9 +694,13 @@ export class MeasurementRenderer {
         opacity: this.config.areaFillOpacity,
         side: THREE.DoubleSide,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1.0,
+        polygonOffsetUnits: -1.0,
       });
       const fill = new THREE.Mesh(fillGeometry, fillMaterial);
       fill.name = 'area-fill';
+      fill.renderOrder = 98; // Render after splat but before lines (100)
       group.add(fill);
     }
 
@@ -1158,18 +1162,22 @@ export class MeasurementRenderer {
     // For fill and label, use FULL cursor point (not shortened) for accurate area calculation
     const fullPoints = cursorPoint ? [...points, cursorPoint] : points;
 
-    // Create fill if we have enough points (purple with increased opacity)
+    // Create fill if we have enough points
     if (fullPoints.length >= 3) {
       const fillGeometry = this.createPolygonGeometry(fullPoints);
       if (fillGeometry) {
         const fillMaterial = new THREE.MeshBasicMaterial({
-          color: MEASUREMENT_COLORS.area, // Purple for area preview
+          color: MEASUREMENT_COLORS.area,
           transparent: true,
-          opacity: this.config.areaFillOpacity * 0.6, // ~21% in preview
+          opacity: this.config.areaFillOpacity * 0.6, // ~27% in preview
           side: THREE.DoubleSide,
           depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -1.0,
+          polygonOffsetUnits: -1.0,
         });
         const fill = new THREE.Mesh(fillGeometry, fillMaterial);
+        fill.renderOrder = 98; // Render after splat but before lines (99)
         this.previewGroup.add(fill);
       }
     }
