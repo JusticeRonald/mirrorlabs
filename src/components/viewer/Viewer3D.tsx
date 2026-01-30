@@ -284,13 +284,11 @@ const Viewer3D = ({
     const mx = event.clientX - rect.left;
     const my = event.clientY - rect.top;
     magnifierUpdaterRef.current?.setMousePosition(mx, my);
-    // Hide magnifier during gizmo interaction OR while drawing measurement preview
-    // Preview drawing = after first point placed (pendingMeasurementPointCount >= 1)
-    // This shows magnifier for initial point placement but hides it while drawing the preview line
+    // Hide magnifier during gizmo interaction only
+    // Preview line is excluded from magnifier via two-pass rendering in animate loop
     const gizmoHovered = transformControlsRef.current?.axis != null;
     const gizmoActive = gizmoDraggingRef.current || gizmoHovered;
-    const isDrawingPreview = pendingMeasurementPointCountRef.current >= 1;
-    const magnifierVisible = (magnifierUpdaterRef.current?.enabled ?? false) && !gizmoActive && !isDrawingPreview;
+    const magnifierVisible = (magnifierUpdaterRef.current?.enabled ?? false) && !gizmoActive;
     onMousePositionUpdateRef.current?.(mx, my, magnifierVisible);
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -667,10 +665,23 @@ const Viewer3D = ({
         sceneManager.syncOverlay();
       }
 
-      renderer.render(scene, camera);
+      const magnifier = magnifierUpdaterRef.current;
+      const hasPreview = sceneManager.hasMeasurementPreview();
 
-      // Update magnifier loupe (must be in same rAF as render for drawImage to work)
-      magnifierUpdaterRef.current?.update(renderer.domElement);
+      if (magnifier?.enabled && hasPreview) {
+        // Two-pass render: clean for magnifier, then with preview
+        // This excludes the preview line from magnifier view for precise point placement
+        sceneManager.setMeasurementPreviewVisible(false);
+        renderer.render(scene, camera);
+        magnifier.update(renderer.domElement);
+
+        sceneManager.setMeasurementPreviewVisible(true);
+        renderer.render(scene, camera);
+      } else {
+        // Single render
+        renderer.render(scene, camera);
+        magnifier?.update(renderer.domElement);
+      }
 
       // Notify parent of camera quaternion for axis navigator
       onCameraQuaternionUpdateRef.current?.(camera.quaternion);

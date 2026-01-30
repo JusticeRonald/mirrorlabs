@@ -958,6 +958,24 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Temporarily hide/show preview for magnifier capture.
+   * Used during two-pass rendering to exclude preview line from magnifier view.
+   */
+  setPreviewVisible(visible: boolean): void {
+    if (this.previewGroup) {
+      this.previewGroup.visible = visible;
+    }
+  }
+
+  /**
+   * Check if preview is currently active in the scene.
+   * Used to determine if two-pass rendering is needed for magnifier.
+   */
+  hasActivePreview(): boolean {
+    return this.previewGroup !== null;
+  }
+
+  /**
    * Get all measurement objects for raycasting
    */
   getMeasurementObjects(): THREE.Object3D[] {

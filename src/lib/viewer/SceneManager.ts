@@ -534,6 +534,22 @@ export class SceneManager {
   }
 
   /**
+   * Temporarily hide measurement preview for magnifier capture.
+   * Used during two-pass rendering to exclude preview line from magnifier view.
+   */
+  setMeasurementPreviewVisible(visible: boolean): void {
+    this.measurementRenderer?.setPreviewVisible(visible);
+  }
+
+  /**
+   * Check if measurement preview is active.
+   * Used to determine if two-pass rendering is needed for magnifier.
+   */
+  hasMeasurementPreview(): boolean {
+    return this.measurementRenderer?.hasActivePreview() ?? false;
+  }
+
+  /**
    * Update a measurement point's position (for point editing with gizmo)
    */
   updateMeasurementPoint(id: string, pointIndex: number, newPosition: THREE.Vector3): void {
