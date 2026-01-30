@@ -1606,6 +1606,9 @@ const ViewerContent = () => {
     // Clear hover state immediately
     setHoveredLabelId(null);
 
+    // Clear label cache to force immediate re-render without stale labels
+    prevLabelsRef.current = [];
+
     if (!label.measurementId) return;
 
     if (label.type === 'area' || label.type === 'distance') {
