@@ -175,6 +175,8 @@ interface MeasurementIconOverlayProps {
   selectedPointId?: string | null;
   /** Point currently being dragged (measurementId-pointIndex) */
   draggingPointId?: string | null;
+  /** Point to hide during drag (format: "measurementId-pointIndex") */
+  hiddenPointId?: string | null;
   /** Drag start handler */
   onPointDragStart?: (measurementId: string, pointIndex: number, event: React.MouseEvent) => void;
   /** Hover handler */
@@ -196,6 +198,7 @@ export function MeasurementIconOverlay({
   hoveredPointId,
   selectedPointId,
   draggingPointId,
+  hiddenPointId,
   onPointDragStart,
   onPointHover,
   getWorldPosition,
@@ -252,6 +255,8 @@ export function MeasurementIconOverlay({
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
       {points.map((point) => {
         const pointId = getPointId(point);
+        // Hide the dragged point marker during drag
+        if (hiddenPointId === pointId) return null;
         // Get live world position if function provided, otherwise use passed position
         const livePosition = getWorldPosition?.(point.measurementId, point.pointIndex) ?? point.position;
         const pointWithLivePosition = { ...point, position: livePosition };

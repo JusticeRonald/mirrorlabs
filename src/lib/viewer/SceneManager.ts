@@ -546,6 +546,13 @@ export class SceneManager {
   }
 
   /**
+   * Set measurement drag state - skips pulse animation during point repositioning
+   */
+  setMeasurementDragging(dragging: boolean): void {
+    this.measurementRenderer?.setDragging(dragging);
+  }
+
+  /**
    * Show distance preview (while measuring)
    * Supports both legacy two-point mode and polyline mode with array of points
    */
@@ -619,6 +626,30 @@ export class SceneManager {
    */
   updateMeasurementPoint(id: string, pointIndex: number, newPosition: THREE.Vector3): void {
     this.measurementRenderer?.updateMeasurementPoint(id, pointIndex, newPosition);
+  }
+
+  /**
+   * Show a drag preview while repositioning an existing measurement point.
+   * This is lightweight (no geometry recalculation) for smooth 60fps dragging.
+   * Call this every frame during drag instead of updateMeasurementPoint().
+   */
+  showMeasurementDragPreview(measurementId: string, pointIndex: number, cursorPosition: THREE.Vector3): void {
+    this.measurementRenderer?.showDragPreview(measurementId, pointIndex, cursorPosition);
+  }
+
+  /**
+   * Clear the drag preview and restore hidden segments.
+   * Call this when drag ends (success or cancel) before calling updateMeasurementPoint().
+   */
+  clearMeasurementDragPreview(): void {
+    this.measurementRenderer?.clearDragPreview();
+  }
+
+  /**
+   * Check if a measurement drag preview is currently active.
+   */
+  hasMeasurementDragPreview(): boolean {
+    return this.measurementRenderer?.hasDragPreview() ?? false;
   }
 
   /**

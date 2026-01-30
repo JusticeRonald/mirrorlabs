@@ -220,8 +220,172 @@ const ViewerContent = () => {
     return measurementCursorPosition.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD;
   }, [state.pendingMeasurement, measurementCursorPosition]);
 
+  // Cache for measurement labels during drag (avoids recalculation while dragging)
+  const prevLabelsRef = useRef<MeasurementLabelData[]>([]);
+
+  /**
+   * Normalize a position to THREE.Vector3.
+   * Handles both Vector3 instances and plain {x, y, z} objects.
+   */
+  const normalizeVector3 = useCallback((pos: THREE.Vector3 | { x: number; y: number; z: number }): THREE.Vector3 =>
+    pos instanceof THREE.Vector3 ? pos : new THREE.Vector3(pos.x, pos.y, pos.z), []);
+
+  /**
+   * Get segment indices adjacent to a point in a measurement.
+   * For distance polylines: segment[i] connects point[i] to point[i+1]
+   * For area polygons: segment[i] connects point[i] to point[(i+1) % n] (closed)
+   */
+  const getAffectedSegmentIndices = useCallback((measurement: Measurement, pointIndex: number): number[] => {
+    const pointCount = measurement.points.length;
+    if (measurement.type === 'distance') {
+      // Distance polyline: segment[i] connects point[i] to point[i+1]
+      const affected: number[] = [];
+      if (pointIndex > 0) affected.push(pointIndex - 1); // Segment before this point
+      if (pointIndex < pointCount - 1) affected.push(pointIndex); // Segment after this point
+      return affected;
+    } else if (measurement.type === 'area') {
+      // Area polygon: segment[i] connects point[i] to point[(i+1) % n]
+      const prevSegment = (pointIndex - 1 + pointCount) % pointCount;
+      return [prevSegment, pointIndex];
+    }
+    return [];
+  }, []);
+
+  /**
+   * Generate preview labels for segments affected by a point drag.
+   * Shows blue-styled labels with updated distance/area values.
+   */
+  const generateDragPreviewLabels = useCallback((
+    measurement: Measurement,
+    pointIndex: number,
+    cursorPosition: THREE.Vector3,
+  ): MeasurementLabelData[] => {
+    const labels: MeasurementLabelData[] = [];
+    const points = measurement.points.map(normalizeVector3);
+    const pointCount = points.length;
+    const unit = (measurement.unit || 'ft') as MeasurementUnit;
+
+    if (measurement.type === 'distance') {
+      // Segment before dragged point (connects prev point to cursor)
+      if (pointIndex > 0) {
+        const p1 = points[pointIndex - 1];
+        const midpoint = MeasurementCalculator.calculateMidpoint(p1, cursorPosition);
+        const distance = p1.distanceTo(cursorPosition);
+        labels.push({
+          id: `drag-preview-${measurement.id}-seg-${pointIndex - 1}`,
+          position: midpoint,
+          value: MeasurementCalculator.formatDistance(distance, unit),
+          type: 'segment',
+          isPreview: true,
+          measurementId: measurement.id,
+          segmentIndex: pointIndex - 1,
+          canDelete: false,
+        });
+      }
+      // Segment after dragged point (connects cursor to next point)
+      if (pointIndex < pointCount - 1) {
+        const p2 = points[pointIndex + 1];
+        const midpoint = MeasurementCalculator.calculateMidpoint(cursorPosition, p2);
+        const distance = cursorPosition.distanceTo(p2);
+        labels.push({
+          id: `drag-preview-${measurement.id}-seg-${pointIndex}`,
+          position: midpoint,
+          value: MeasurementCalculator.formatDistance(distance, unit),
+          type: 'segment',
+          isPreview: true,
+          measurementId: measurement.id,
+          segmentIndex: pointIndex,
+          canDelete: false,
+        });
+      }
+    } else if (measurement.type === 'area') {
+      // Previous segment (connects prev point to cursor)
+      const prevIdx = (pointIndex - 1 + pointCount) % pointCount;
+      const p1 = points[prevIdx];
+      const mid1 = MeasurementCalculator.calculateMidpoint(p1, cursorPosition);
+      const dist1 = p1.distanceTo(cursorPosition);
+      labels.push({
+        id: `drag-preview-${measurement.id}-seg-${prevIdx}`,
+        position: mid1,
+        value: MeasurementCalculator.formatDistance(dist1, unit),
+        type: 'segment',
+        isPreview: true,
+        measurementId: measurement.id,
+        segmentIndex: prevIdx,
+        canDelete: false,
+      });
+
+      // Next segment (connects cursor to next point)
+      const nextIdx = (pointIndex + 1) % pointCount;
+      const p2 = points[nextIdx];
+      const mid2 = MeasurementCalculator.calculateMidpoint(cursorPosition, p2);
+      const dist2 = cursorPosition.distanceTo(p2);
+      labels.push({
+        id: `drag-preview-${measurement.id}-seg-${pointIndex}`,
+        position: mid2,
+        value: MeasurementCalculator.formatDistance(dist2, unit),
+        type: 'segment',
+        isPreview: true,
+        measurementId: measurement.id,
+        segmentIndex: pointIndex,
+        canDelete: false,
+      });
+
+      // Update centroid label with new area (recalculate with cursor replacing dragged point)
+      const newPoints = [...points];
+      newPoints[pointIndex] = cursorPosition;
+      const newArea = MeasurementCalculator.calculateArea(newPoints);
+      const centroid = MeasurementCalculator.calculateCentroid(newPoints);
+      labels.push({
+        id: `drag-preview-${measurement.id}-area`,
+        position: centroid,
+        value: MeasurementCalculator.formatArea(newArea, unit),
+        type: 'area',
+        isPreview: true,
+        measurementId: measurement.id,
+        canDelete: false,
+      });
+    }
+
+    return labels;
+  }, [normalizeVector3]);
+
   // Build measurement label data for overlay
+  // During drag, generate preview labels for affected segments while keeping others cached
   const measurementLabels = useMemo<MeasurementLabelData[]>(() => {
+    // Handle drag preview: generate preview labels for affected segments
+    if (state.draggingMeasurementPoint && measurementCursorPosition) {
+      const { measurementId, pointIndex } = state.draggingMeasurementPoint;
+      const measurement = state.measurements.find(m => m.id === measurementId);
+      if (!measurement) return prevLabelsRef.current;
+
+      // Determine which segments are affected by the drag
+      const affectedSegments = getAffectedSegmentIndices(measurement, pointIndex);
+
+      // Filter out affected labels from cache (keep non-affected labels stable)
+      const unaffectedLabels = prevLabelsRef.current.filter(label => {
+        if (label.measurementId !== measurementId) return true;
+        // For area measurements, also hide the centroid label (we recalculate it)
+        if (measurement.type === 'area' && label.type === 'area') return false;
+        if (label.segmentIndex === undefined) return true;
+        return !affectedSegments.includes(label.segmentIndex);
+      });
+
+      // Generate preview labels for affected segments
+      const previewLabels = generateDragPreviewLabels(
+        measurement,
+        pointIndex,
+        measurementCursorPosition
+      );
+
+      return [...unaffectedLabels, ...previewLabels];
+    }
+
+    // Return cached labels during drag without cursor position
+    if (state.draggingMeasurementPoint) {
+      return prevLabelsRef.current;
+    }
+
     const labels: MeasurementLabelData[] = [];
     const renderer = sceneManagerRef.current?.getMeasurementRenderer();
 
@@ -315,15 +479,10 @@ const ViewerContent = () => {
       }
     }
 
+    // Cache labels for drag optimization
+    prevLabelsRef.current = labels;
     return labels;
-  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion, permissions.canMeasure]);
-
-  /**
-   * Normalize a position to THREE.Vector3.
-   * Handles both Vector3 instances and plain {x, y, z} objects.
-   */
-  const normalizeVector3 = useCallback((pos: THREE.Vector3 | { x: number; y: number; z: number }): THREE.Vector3 =>
-    pos instanceof THREE.Vector3 ? pos : new THREE.Vector3(pos.x, pos.y, pos.z), []);
+  }, [state.measurements, state.pendingMeasurement, state.draggingMeasurementPoint, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion, permissions.canMeasure, getAffectedSegmentIndices, generateDragPreviewLabels]);
 
   /**
    * Persist a measurement to Supabase if configured.
@@ -1286,18 +1445,8 @@ const ViewerContent = () => {
     return () => container.removeEventListener('contextmenu', handleContextMenu);
   }, [state.activeTool]);
 
-  // Handle measurement point drag end (pointerup anywhere in window)
-  useEffect(() => {
-    if (!state.draggingMeasurementPoint) return;
-
-    const handlePointerUp = () => {
-      stopDraggingMeasurementPoint();
-    };
-
-    // Listen on window to catch release even if cursor leaves the viewer
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => window.removeEventListener('pointerup', handlePointerUp);
-  }, [state.draggingMeasurementPoint, stopDraggingMeasurementPoint]);
+  // Note: Measurement point drag end (pointerup) is now handled in Viewer3D.tsx
+  // This allows ref-only updates during drag for smooth 60fps performance
 
   // Handle annotation submission with Supabase persistence
   const handleAnnotationSubmit = useCallback(async (data: {
@@ -1701,6 +1850,10 @@ const ViewerContent = () => {
             : null
           }
           draggingPointId={state.draggingMeasurementPoint
+            ? `${state.draggingMeasurementPoint.measurementId}-${state.draggingMeasurementPoint.pointIndex}`
+            : null
+          }
+          hiddenPointId={state.draggingMeasurementPoint
             ? `${state.draggingMeasurementPoint.measurementId}-${state.draggingMeasurementPoint.pointIndex}`
             : null
           }

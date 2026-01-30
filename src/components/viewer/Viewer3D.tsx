@@ -150,6 +150,11 @@ const Viewer3D = ({
   // Ref for draggingMeasurementPoint to avoid recreating handleMouseMove callback
   const draggingMeasurementPointRef = useRef(draggingMeasurementPoint);
 
+  // Refs for smooth drag: skip React state during drag, sync once on drag end
+  // This prevents the choppy updates caused by state → useMemo recalc → re-render
+  const draggingPositionRef = useRef<THREE.Vector3 | null>(null);
+  const originalPositionRef = useRef<THREE.Vector3 | null>(null);
+
   // Store callbacks and values in refs to avoid effect re-runs when parent re-renders
   const onSplatLoadStartRef = useRef(onSplatLoadStart);
   const onSplatLoadProgressRef = useRef(onSplatLoadProgress);
@@ -313,18 +318,31 @@ const Viewer3D = ({
       const pickResult = sceneManagerRef.current.pickSplatPosition(cameraRef.current, pointer);
       if (pickResult) {
         const newPosition = pickResult.position.clone();
-        // Update via callback
-        onMeasurementPointMoveRef.current?.(
+
+        // Capture original position on first drag move (for Escape cancellation)
+        if (!originalPositionRef.current) {
+          originalPositionRef.current = sceneManagerRef.current.getMeasurementPointWorldPosition(
+            currentDragPoint.measurementId,
+            currentDragPoint.pointIndex
+          ) ?? newPosition.clone();
+          // Notify renderer that drag has started (skips pulse animation)
+          sceneManagerRef.current.setMeasurementDragging(true);
+        }
+
+        // Store position in ref for drag end sync (skip React state during drag for smoothness)
+        draggingPositionRef.current = newPosition;
+
+        // PREVIEW-BASED DRAG: Show lightweight preview line instead of updating geometry
+        // This is much faster than updateMeasurementPoint() which recalculates Line2 geometry every frame
+        // Actual geometry update happens ONCE when drag ends (in handlePointerUp)
+        sceneManagerRef.current.showMeasurementDragPreview(
           currentDragPoint.measurementId,
           currentDragPoint.pointIndex,
           newPosition
         );
-        // Also update SceneManager renderer directly for smooth visual feedback
-        sceneManagerRef.current.updateMeasurementPoint(
-          currentDragPoint.measurementId,
-          currentDragPoint.pointIndex,
-          newPosition
-        );
+
+        // Update cursor position for HTML label overlay (enables preview labels during drag)
+        onMeasurementCursorUpdateRef.current?.(newPosition);
       }
       // Don't process other interactions while dragging
       return;
@@ -1095,6 +1113,78 @@ const Viewer3D = ({
     if (containerRef.current && draggingMeasurementPoint) {
       containerRef.current.style.cursor = 'grabbing';
     }
+  }, [draggingMeasurementPoint]);
+
+  // Handle measurement point drag end and Escape cancellation
+  // This effect manages the ref-only drag pattern for smooth 60fps updates
+  useEffect(() => {
+    if (!draggingMeasurementPoint) {
+      // Clear refs when not dragging
+      draggingPositionRef.current = null;
+      originalPositionRef.current = null;
+      return;
+    }
+
+    // Escape key: restore original position and cancel drag
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && draggingMeasurementPointRef.current) {
+        // Clear preview first (restores hidden segments, area fill)
+        sceneManagerRef.current?.clearMeasurementDragPreview();
+        // Notify renderer that drag has ended (resumes pulse animation)
+        sceneManagerRef.current?.setMeasurementDragging(false);
+
+        // No geometry update needed - original position is still in the renderer
+        // (we were only showing a preview, not actually moving the point)
+
+        // Clear refs
+        draggingPositionRef.current = null;
+        originalPositionRef.current = null;
+        // Signal drag end without position sync (position unchanged)
+        onMeasurementPointDragEndRef.current?.();
+      }
+    };
+
+    // Pointer up: sync final position to state, then end drag
+    const handlePointerUp = () => {
+      const dragPoint = draggingMeasurementPointRef.current;
+      const finalPosition = draggingPositionRef.current;
+
+      // Clear preview first (restores hidden segments, area fill)
+      sceneManagerRef.current?.clearMeasurementDragPreview();
+      // Notify renderer that drag has ended (resumes pulse animation)
+      sceneManagerRef.current?.setMeasurementDragging(false);
+
+      if (dragPoint && finalPosition) {
+        // Apply geometry update ONCE at drag end (this is the expensive operation)
+        sceneManagerRef.current?.updateMeasurementPoint(
+          dragPoint.measurementId,
+          dragPoint.pointIndex,
+          finalPosition
+        );
+
+        // Sync final position to React state (single update at end of drag)
+        onMeasurementPointMoveRef.current?.(
+          dragPoint.measurementId,
+          dragPoint.pointIndex,
+          finalPosition
+        );
+      }
+
+      // Clear refs
+      draggingPositionRef.current = null;
+      originalPositionRef.current = null;
+
+      // Signal drag end
+      onMeasurementPointDragEndRef.current?.();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
   }, [draggingMeasurementPoint]);
 
   // Sync magnifier canvas prop

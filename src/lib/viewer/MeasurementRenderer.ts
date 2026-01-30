@@ -97,6 +97,9 @@ export class MeasurementRenderer {
   // Visibility state
   private visible: boolean = true;
 
+  // Drag state - when true, pulse animation is skipped
+  private isDragging: boolean = false;
+
   // Segments hidden for drag (magnifier two-pass render)
   // Tracks which segments are temporarily hidden during point drag
   private hiddenDragSegments: Set<string> = new Set();
@@ -108,6 +111,15 @@ export class MeasurementRenderer {
   // Lock flag to prevent race conditions during transform operations
   // When true, updateMeasurementPoint() calls should be ignored to prevent corruption
   private isApplyingTransform: boolean = false;
+
+  // Drag preview state - tracks which measurement/point is being dragged
+  // When active, adjacent segments are hidden and a lightweight preview line is shown
+  private dragPreviewState: {
+    measurementId: string;
+    pointIndex: number;
+    adjacentPoints: THREE.Vector3[]; // Points connected to the dragged point (in local space)
+    measurementType: MeasurementType;
+  } | null = null;
 
   constructor(scene: THREE.Scene, config: Partial<MeasurementConfig> = {}) {
     this.scene = scene;
@@ -970,11 +982,21 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Set drag state - when true, pulse animation is skipped
+   * Call this when drag starts/ends to prevent pulsing during point repositioning
+   */
+  setDragging(dragging: boolean): void {
+    this.isDragging = dragging;
+  }
+
+  /**
    * Update the pulse animation for selected measurement
    * Call this from the render loop with deltaTime in seconds
    */
   updatePulse(deltaTime: number): void {
     if (!this.selectedId) return;
+    // Skip pulse animation during drag (pulse reserved for UI panel selection)
+    if (this.isDragging) return;
 
     // Advance pulse phase
     // ~1.5 seconds per full cycle (2π radians)
@@ -1218,6 +1240,195 @@ export class MeasurementRenderer {
       });
       this.previewGroup = null;
     }
+  }
+
+  /**
+   * Show a drag preview while repositioning an existing measurement point.
+   * This is lightweight (no geometry recalculation) for smooth 60fps dragging.
+   *
+   * - Hides adjacent segments connected to the dragged point
+   * - Shows a dashed preview line from adjacent points to the cursor position
+   * - For areas: hides the fill mesh
+   *
+   * @param measurementId The measurement being edited
+   * @param pointIndex The index of the point being dragged
+   * @param cursorPosition The current cursor position on the splat surface (world space)
+   */
+  showDragPreview(measurementId: string, pointIndex: number, cursorPosition: THREE.Vector3): void {
+    const group = this.measurements.get(measurementId);
+    if (!group) return;
+
+    const data = group.userData.data as MeasurementData;
+    if (pointIndex < 0 || pointIndex >= data.points.length) return;
+
+    // Initialize drag state on first call (don't re-initialize every frame)
+    if (!this.dragPreviewState || this.dragPreviewState.measurementId !== measurementId || this.dragPreviewState.pointIndex !== pointIndex) {
+      // Clear any existing preview
+      this.clearPreview();
+
+      // Hide adjacent segments
+      this.setSegmentsForPointVisible(measurementId, pointIndex, false);
+
+      // Hide area fill if applicable
+      if (data.type === 'area') {
+        group.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+            child.visible = false;
+          }
+        });
+      }
+
+      // Get adjacent points (in local space, stored in measurement data)
+      const adjacentPoints: THREE.Vector3[] = [];
+      const pointCount = data.points.length;
+
+      if (data.type === 'distance') {
+        // Distance polyline: prev point (if exists) and next point (if exists)
+        if (pointIndex > 0) {
+          adjacentPoints.push(data.points[pointIndex - 1].clone());
+        }
+        if (pointIndex < pointCount - 1) {
+          adjacentPoints.push(data.points[pointIndex + 1].clone());
+        }
+      } else if (data.type === 'area') {
+        // Area polygon: always has prev and next (closed loop)
+        const prevIdx = (pointIndex - 1 + pointCount) % pointCount;
+        const nextIdx = (pointIndex + 1) % pointCount;
+        adjacentPoints.push(data.points[prevIdx].clone());
+        adjacentPoints.push(data.points[nextIdx].clone());
+      }
+
+      // Store drag state
+      this.dragPreviewState = {
+        measurementId,
+        pointIndex,
+        adjacentPoints,
+        measurementType: data.type,
+      };
+    }
+
+    // Now create/update the preview line
+    // Convert cursor position to local space for consistency with stored adjacent points
+    const localCursor = cursorPosition.clone();
+    this.parentObject.worldToLocal(localCursor);
+
+    // Build preview line positions: [prevPoint?] → cursor → [nextPoint?]
+    const positions: number[] = [];
+    const { adjacentPoints, measurementType } = this.dragPreviewState!;
+
+    if (measurementType === 'distance') {
+      // Distance: draw line through all points
+      // prevPoint → cursor → nextPoint
+      if (adjacentPoints.length === 1) {
+        // Endpoint: one adjacent point
+        const adj = adjacentPoints[0];
+        const adjWorld = adj.clone();
+        this.parentObject.localToWorld(adjWorld);
+        positions.push(adjWorld.x, adjWorld.y, adjWorld.z);
+        positions.push(cursorPosition.x, cursorPosition.y, cursorPosition.z);
+      } else if (adjacentPoints.length === 2) {
+        // Middle point: two adjacent points
+        const prev = adjacentPoints[0];
+        const next = adjacentPoints[1];
+        const prevWorld = prev.clone();
+        const nextWorld = next.clone();
+        this.parentObject.localToWorld(prevWorld);
+        this.parentObject.localToWorld(nextWorld);
+        positions.push(prevWorld.x, prevWorld.y, prevWorld.z);
+        positions.push(cursorPosition.x, cursorPosition.y, cursorPosition.z);
+        positions.push(nextWorld.x, nextWorld.y, nextWorld.z);
+      }
+    } else if (measurementType === 'area') {
+      // Area: draw lines from both adjacent points to cursor
+      // prev → cursor → next
+      const prev = adjacentPoints[0];
+      const next = adjacentPoints[1];
+      const prevWorld = prev.clone();
+      const nextWorld = next.clone();
+      this.parentObject.localToWorld(prevWorld);
+      this.parentObject.localToWorld(nextWorld);
+      positions.push(prevWorld.x, prevWorld.y, prevWorld.z);
+      positions.push(cursorPosition.x, cursorPosition.y, cursorPosition.z);
+      positions.push(nextWorld.x, nextWorld.y, nextWorld.z);
+    }
+
+    // Clear and recreate preview group (lightweight operation)
+    this.clearPreview();
+
+    if (positions.length < 6) return; // Need at least 2 points
+
+    this.previewGroup = new THREE.Group();
+    this.previewGroup.name = 'drag-preview';
+
+    // Create thin animated Line2 for visibility
+    const lineGeometry = new LineGeometry();
+    lineGeometry.setPositions(positions);
+
+    // Main preview line - white dashed, thin
+    this.previewLineMaterial = new LineMaterial({
+      color: 0xFFFFFF, // White for visibility
+      linewidth: 1.5, // Thin line (~1.5px)
+      resolution: this.resolution,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.0,
+      polygonOffsetUnits: -1.0,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9,
+      dashed: true,
+      dashSize: 0.05,
+      gapSize: 0.03,
+    });
+
+    this.previewLine = new Line2(lineGeometry, this.previewLineMaterial);
+    this.previewLine.computeLineDistances();
+    this.previewLine.name = 'drag-preview-line';
+    this.previewLine.renderOrder = 99;
+    this.previewGroup.add(this.previewLine);
+
+    // NOTE: No animation for drag preview - static dashed line for clarity
+    // (animation is reserved for new measurement placement previews)
+
+    this.scene.add(this.previewGroup);
+  }
+
+  /**
+   * Clear the drag preview and restore hidden segments.
+   * Call this when drag ends (success or cancel) before updating geometry.
+   */
+  clearDragPreview(): void {
+    if (!this.dragPreviewState) return;
+
+    const { measurementId, pointIndex, measurementType } = this.dragPreviewState;
+
+    // Clear preview geometry
+    this.clearPreview();
+
+    // Restore segment visibility
+    this.setSegmentsForPointVisible(measurementId, pointIndex, true);
+
+    // Restore area fill visibility if applicable
+    if (measurementType === 'area') {
+      const group = this.measurements.get(measurementId);
+      if (group) {
+        group.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.name === 'area-fill') {
+            child.visible = true;
+          }
+        });
+      }
+    }
+
+    // Clear state
+    this.dragPreviewState = null;
+  }
+
+  /**
+   * Check if a drag preview is currently active.
+   * Used by Viewer3D to determine if preview-based drag is in progress.
+   */
+  hasDragPreview(): boolean {
+    return this.dragPreviewState !== null;
   }
 
   /**
