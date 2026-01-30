@@ -167,6 +167,7 @@ const ViewerContent = () => {
   // Transform state
   const [transformMode, setTransformMode] = useState<TransformMode | null>(null);
   const [initialTransform, setInitialTransform] = useState<SplatTransform | undefined>(undefined);
+  const [transformVersion, setTransformVersion] = useState(0); // Increments on gizmo drag to invalidate label positions
   const [currentTransform, setCurrentTransform] = useState<SplatTransform | null>(null);
   const [savedTransform, setSavedTransform] = useState<SplatTransform | null>(null);
   const sceneManagerRef = useRef<SceneManager | null>(null);
@@ -279,7 +280,7 @@ const ViewerContent = () => {
     }
 
     return labels;
-  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady]);
+  }, [state.measurements, state.pendingMeasurement, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion]);
 
   /**
    * Normalize a position to THREE.Vector3.
@@ -757,6 +758,7 @@ const ViewerContent = () => {
   // Transform change handler (called when gizmo is manipulated)
   const handleTransformChange = useCallback((transform: SplatTransform) => {
     setCurrentTransform(transform);
+    setTransformVersion(v => v + 1); // Invalidate measurement label positions
   }, []);
 
   // Reset view
