@@ -358,6 +358,7 @@ Three account types with different permission levels:
 - ✅ 4-engineer code review with targeted fixes (January 27, 2026)
 - ✅ Measurement segment split behavior (January 30, 2026)
 - ✅ Measurement persistence to Supabase with updateMeasurement service (January 30, 2026)
+- ✅ Measurement selection pulse effect (January 30, 2026)
 
 ### Next Priority (P1 Features)
 - [x] Functional measurement tool (distance, area)
@@ -374,7 +375,31 @@ Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Bot
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
 
-## Code Review Summary (January 30, 2026)
+## Code Review Summary (January 30, 2026) - Measurement Selection UX
+
+Measurement selection visual feedback improvements:
+
+### Changes Made
+| Category | Summary |
+|----------|---------|
+| **Total Label Removal** | Removed redundant total distance label from 3D view (already shown in UI panel) |
+| **Selection Pulse Effect** | Added pulsing/glowing animation when measurements selected from UI panel |
+| **Renderer Integration** | Connected `selectedMeasurementId` state to `MeasurementRenderer.setSelected()` |
+
+### Files Modified
+- `src/pages/ViewerPage.tsx` - Removed total label block, added selection sync useEffect
+- `src/lib/viewer/MeasurementRenderer.ts` - Added `pulsePhase`, `setMeasurementOpacity()`, `updatePulse()`
+- `src/components/viewer/Viewer3D.tsx` - Call `updatePulse(deltaTime)` in animation loop
+
+### Pulse Animation Details
+- ~1.5 second cycle time (sine wave)
+- Intensity range: 0.3 to 1.0 (never fully transparent)
+- Applies to both line segments and area fills
+- Continuous pulse while measurement is selected
+
+---
+
+## Code Review Summary (January 30, 2026) - Segment Split
 
 Distance measurement segment split behavior and persistence:
 
