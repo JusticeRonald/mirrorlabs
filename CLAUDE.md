@@ -359,6 +359,8 @@ Three account types with different permission levels:
 - ✅ Measurement segment split behavior (January 30, 2026)
 - ✅ Measurement persistence to Supabase with updateMeasurement service (January 30, 2026)
 - ✅ Measurement selection pulse effect (January 30, 2026)
+- ✅ Area measurement fill styling (blue color, increased opacity) (January 30, 2026)
+- ✅ Area fill viewing angle bug fix (polygonOffset + renderOrder) (January 30, 2026)
 
 ### Next Priority (P1 Features)
 - [x] Functional measurement tool (distance, area)
@@ -374,6 +376,30 @@ Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Bot
 1. Run `npm run dev` to start dev server
 2. Check this file's "Next Priority" section for pending work
 3. Use demo mode (no Supabase config needed) for local development
+
+## Code Review Summary (January 30, 2026) - Area Fill Styling
+
+Area measurement polygon fill visual improvements:
+
+### Changes Made
+| Category | Summary |
+|----------|---------|
+| **Color Change** | Changed area fill from purple (`0x8B5CF6`) to blue (`0x3B82F6`) matching distance measurements |
+| **Opacity Increase** | Increased fill opacity from 35% to 45% for better visibility |
+| **Viewing Angle Fix** | Added `polygonOffset` and `renderOrder` to fix fill disappearing at certain camera angles |
+
+### Files Modified
+- `src/lib/viewer/MeasurementRenderer.ts` - Updated `MEASUREMENT_COLORS.area`, `areaFillOpacity`, added depth handling to fill meshes
+
+### Technical Details
+- **polygonOffset**: `polygonOffsetFactor: -1.0`, `polygonOffsetUnits: -1.0` pushes fill forward in depth
+- **renderOrder**: `98` ensures fill renders after splat but before outline lines (99) and main lines (100)
+- Applied to both finalized area measurements and preview fills during placement
+
+### Branch Status
+- `gaussian-splat-viewer` merged to `master` (January 30, 2026)
+
+---
 
 ## Code Review Summary (January 30, 2026) - Measurement Selection UX
 
