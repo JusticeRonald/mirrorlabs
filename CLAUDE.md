@@ -56,6 +56,10 @@ src/
 - `src/components/auth/SignupForm.tsx` - User registration form
 - `src/components/auth/DemoAccessCard.tsx` - Demo mode access card
 - `src/components/viewer/Viewer3D.tsx` - Main 3D canvas component with render loop
+- `src/components/viewer/MeasurementLabel.tsx` - HTML overlay labels for measurement values (distance, area)
+- `src/components/viewer/MeasurementMarker.tsx` - HTML overlay icons for measurement points
+- `src/lib/viewer/MeasurementRenderer.ts` - 3D measurement line rendering and label position calculation
+- `src/lib/viewer/MeasurementCalculator.ts` - Distance/area calculations and unit formatting
 - `src/components/upload/ScanUploader.tsx` - Drag-drop file upload component
 - `src/contexts/AuthContext.tsx` - Supabase Auth with demo mode fallback
 - `src/contexts/ViewerContext.tsx` - State management for viewer (tools, loading, saved views)
@@ -370,11 +374,13 @@ Development on `gaussian-splat-viewer` branch, regularly merged to `master`. Bot
 
 ## Code Review Summary (January 29, 2026)
 
-Measurement UX improvements and code quality refactoring:
+Measurement label overlays and UX improvements:
 
 ### Changes Made
 | Category | Summary |
 |----------|---------|
+| **Measurement Labels** | HTML overlay labels showing distance/area values at midpoints and centroids |
+| **Live Preview Labels** | Blue-styled labels during measurement placement showing real-time distance |
 | **Measurement Preview** | Live preview line showing distance/area during point placement |
 | **Constants Extraction** | Magic numbers moved to `src/lib/viewer/constants.ts` |
 | **Undo Support** | Ctrl+Z removes last measurement point during placement |
@@ -382,19 +388,27 @@ Measurement UX improvements and code quality refactoring:
 | **Bug Fix** | Removed stale `setSceneManager()` call after state cleanup |
 
 ### New Files
+- `src/components/viewer/MeasurementLabel.tsx` - Label component with distance-based font scaling
 - `src/lib/viewer/constants.ts` - Centralized constants for thresholds, camera, controls, lighting, grid
 
 ### Files Modified
-- `src/pages/ViewerPage.tsx` - Measurement preview, orbit tracking, removed sceneManager state
+- `src/pages/ViewerPage.tsx` - Measurement labels useMemo, preview labels, orbit tracking
+- `src/lib/viewer/MeasurementRenderer.ts` - Label position methods: `getDistanceLabelPosition()`, `getAreaLabelPositions()`
 - `src/contexts/ViewerContext.tsx` - Added `undoLastMeasurementPoint` action
 - `src/components/viewer/Viewer3D.tsx` - Orbit state tracking for frozen preview
-- `src/lib/viewer/MeasurementRenderer.ts` - Preview line rendering, snap detection
 - `src/components/viewer/MeasurementsTab.tsx` - Unit display improvements
 - `src/components/viewer/CollaborationPanel.tsx` - Minor UI updates
 - `src/components/viewer/MeasurementMarker.tsx` - Hover states
 - `src/components/viewer/AxisNavigator.tsx` - Code cleanup
 - `src/lib/viewer/SceneManager.ts` - Minor adjustments
 - `src/lib/viewer/SplatVisualizationOverlay.ts` - Sync method
+
+### Measurement Label Feature Details
+- **Distance labels**: Show formatted distance at line midpoint (e.g., "24.5 ft")
+- **Area labels**: Show total area at centroid, segment lengths at each side midpoint
+- **Preview labels**: Blue styling (`bg-blue-500/90`) during placement, dark styling (`bg-neutral-900/90`) for final
+- **Distance-based scaling**: Font size scales with camera distance (10-14px range)
+- **Hidden in point cloud mode**: Labels follow same visibility rules as other markers
 
 ### Branch Status
 - `gaussian-splat-viewer` merged to `master` (January 29, 2026)
