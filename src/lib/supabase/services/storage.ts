@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../client';
 
-export type SupportedFileType = 'ply' | 'spz' | 'splat' | 'ksplat' | 'pcsogs';
+export type SupportedFileType = 'ply' | 'spz' | 'splat' | 'ksplat' | 'pcsogs' | 'sog';
 
 export interface UploadProgress {
   loaded: number;
@@ -24,6 +24,7 @@ export const MAX_FILE_SIZES: Record<SupportedFileType, number> = {
   splat: 50 * 1024 * 1024, // 50MB
   ksplat: 50 * 1024 * 1024, // 50MB
   pcsogs: 50 * 1024 * 1024, // 50MB
+  sog: 50 * 1024 * 1024, // 50MB
 };
 
 /**
@@ -33,7 +34,7 @@ export function validateScanFile(file: File): { valid: boolean; error?: string }
   // Extract extension
   const extension = file.name.split('.').pop()?.toLowerCase();
 
-  if (!extension || !['ply', 'spz', 'splat', 'ksplat', 'pcsogs'].includes(extension)) {
+  if (!extension || !['ply', 'spz', 'splat', 'ksplat', 'pcsogs', 'sog'].includes(extension)) {
     return {
       valid: false,
       error: `Unsupported file type: ${extension || 'unknown'}. Supported formats: PLY, SPZ, SPLAT, KSPLAT, PCSOGS`,
@@ -60,7 +61,7 @@ export function validateScanFile(file: File): { valid: boolean; error?: string }
  */
 export function getFileType(filename: string): SupportedFileType | null {
   const extension = filename.split('.').pop()?.toLowerCase();
-  if (extension && ['ply', 'spz', 'splat', 'ksplat', 'pcsogs'].includes(extension)) {
+  if (extension && ['ply', 'spz', 'splat', 'ksplat', 'pcsogs', 'sog'].includes(extension)) {
     return extension as SupportedFileType;
   }
   return null;

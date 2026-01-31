@@ -350,3 +350,116 @@ export async function clearScanTransform(
 ): Promise<{ error: Error | null }> {
   return clearScanOrientation(scanId); // Same operation, just clear the field
 }
+
+/**
+ * Update compression progress for a scan
+ * @param scanId The scan ID
+ * @param progress Progress percentage (0-100)
+ */
+export async function updateCompressionProgress(
+  scanId: string,
+  progress: number
+): Promise<{ error: Error | null }> {
+  const { error } = await updateScan(scanId, {
+    compression_progress: Math.round(Math.max(0, Math.min(100, progress))),
+  });
+  return { error };
+}
+
+/**
+ * Start compression for a scan (set status to processing)
+ * @param scanId The scan ID
+ * @param originalFileSize Original file size in bytes
+ */
+export async function startScanCompression(
+  scanId: string,
+  originalFileSize: number
+): Promise<{ error: Error | null }> {
+  const { error } = await updateScan(scanId, {
+    status: 'processing',
+    compression_progress: 0,
+    original_file_size: originalFileSize,
+    error_message: null,
+  });
+  return { error };
+}
+
+/**
+ * Complete compression for a scan
+ * @param scanId The scan ID
+ * @param compressedFileUrl New URL to the compressed file
+ * @param compressedFileSize Compressed file size in bytes
+ * @param originalFileSize Original file size in bytes
+ */
+export async function completeScanCompression(
+  scanId: string,
+  compressedFileUrl: string,
+  compressedFileSize: number,
+  originalFileSize: number
+): Promise<{ error: Error | null }> {
+  const compressionRatio = originalFileSize / compressedFileSize;
+
+  const { error } = await updateScan(scanId, {
+    status: 'ready',
+    file_url: compressedFileUrl,
+    file_type: 'pcsogs',
+    compressed_file_size: compressedFileSize,
+    original_file_size: originalFileSize,
+    compression_ratio: compressionRatio,
+    compression_progress: 100,
+    error_message: null,
+  });
+  return { error };
+}
+
+/**
+ * Mark compression as failed
+ * @param scanId The scan ID
+ * @param errorMessage Error message describing the failure
+ */
+export async function failScanCompression(
+  scanId: string,
+  errorMessage: string
+): Promise<{ error: Error | null }> {
+  const { error } = await updateScan(scanId, {
+    status: 'error',
+    error_message: errorMessage,
+    compression_progress: null,
+  });
+  return { error };
+}
+
+/**
+ * Subscribe to real-time changes on a scan
+ * @param scanId The scan ID
+ * @param onUpdate Callback when scan is updated
+ * @returns Unsubscribe function
+ */
+export function subscribeScanChanges(
+  scanId: string,
+  onUpdate: (scan: Scan) => void
+): () => void {
+  if (!isSupabaseConfigured()) {
+    return () => {};
+  }
+
+  const channel = supabase
+    .channel(`scan:${scanId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'scans',
+        filter: `id=eq.${scanId}`,
+      },
+      (payload) => {
+        onUpdate(payload.new as Scan);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

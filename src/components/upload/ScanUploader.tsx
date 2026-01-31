@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, X, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, X, FileUp, CheckCircle2, AlertCircle, Loader2, FileArchive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -12,6 +12,7 @@ import {
 } from '@/lib/supabase/services/storage';
 import { createScan } from '@/lib/supabase/services/scans';
 import { useAuth } from '@/contexts/AuthContext';
+import { enqueueCompressionJob, requiresCompression } from '@/lib/compression';
 
 interface ScanUploaderProps {
   projectId: string;
@@ -20,7 +21,7 @@ interface ScanUploaderProps {
   className?: string;
 }
 
-type UploadState = 'idle' | 'validating' | 'uploading' | 'processing' | 'complete' | 'error';
+type UploadState = 'idle' | 'validating' | 'uploading' | 'processing' | 'compressing' | 'complete' | 'error';
 
 interface FileUploadState {
   file: File;
@@ -28,6 +29,7 @@ interface FileUploadState {
   progress: number;
   error?: string;
   scanId?: string;
+  needsCompression?: boolean;
 }
 
 const FILE_TYPE_LABELS: Record<SupportedFileType, string> = {
@@ -36,6 +38,7 @@ const FILE_TYPE_LABELS: Record<SupportedFileType, string> = {
   splat: 'SPLAT (Gaussian Splat)',
   ksplat: 'KSPLAT (K-Splat)',
   pcsogs: 'SOG (Compressed)',
+  sog: 'SOG (Compressed)',
 };
 
 export function ScanUploader({
@@ -119,13 +122,21 @@ export function ScanUploader({
         updateUpload(uploadIndex, { state: 'processing' });
 
         const fileType = getFileType(file.name) || 'ply';
+        const needsCompressionNow = requiresCompression(fileType);
+
+        // For PLY files, set status to 'processing' so the worker can compress them
+        // For other formats (already compressed), set status to 'ready'
+        const initialStatus = needsCompressionNow ? 'processing' : 'ready';
+
         const scanResult = await createScan({
           project_id: projectId,
           name: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
           file_url: result.url!,
           file_type: fileType,
           file_size: file.size,
-          status: 'ready',
+          status: initialStatus,
+          original_file_size: needsCompressionNow ? file.size : undefined,
+          compression_progress: needsCompressionNow ? 0 : undefined,
           created_by: user!.id,
         });
 
@@ -133,13 +144,42 @@ export function ScanUploader({
           throw scanResult.error;
         }
 
-        updateUpload(uploadIndex, {
-          state: 'complete',
-          progress: 100,
-          scanId: scanResult.data!.id,
-        });
+        // If the file needs compression, enqueue a compression job
+        if (needsCompressionNow) {
+          updateUpload(uploadIndex, {
+            state: 'compressing',
+            progress: 100,
+            scanId: scanResult.data!.id,
+            needsCompression: true,
+          });
 
-        onUploadComplete?.(scanResult.data!.id, result.url!);
+          const enqueueResult = await enqueueCompressionJob(
+            scanResult.data!.id,
+            projectId,
+            result.url!,
+            file.name,
+            file.size
+          );
+
+          if (!enqueueResult.success) {
+            console.warn('Failed to enqueue compression job:', enqueueResult.error);
+            // Don't fail the upload - the scan is created, compression can be retried
+          }
+
+          // For PLY files, we consider the upload complete even though compression is pending
+          // The ViewerPage will show compression progress via real-time subscription
+          onUploadComplete?.(scanResult.data!.id, result.url!);
+        } else {
+          // For pre-compressed formats, mark as complete immediately
+          updateUpload(uploadIndex, {
+            state: 'complete',
+            progress: 100,
+            scanId: scanResult.data!.id,
+            needsCompression: false,
+          });
+
+          onUploadComplete?.(scanResult.data!.id, result.url!);
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Upload failed';
         updateUpload(uploadIndex, {
@@ -213,7 +253,7 @@ export function ScanUploader({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".ply,.spz,.splat,.ksplat,.pcsogs"
+          accept=".ply,.spz,.splat,.ksplat,.pcsogs,.sog"
           multiple
           onChange={handleFileInputChange}
           className="hidden"
@@ -280,10 +320,21 @@ export function ScanUploader({
                   </div>
                 )}
 
+                {upload.state === 'compressing' && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <FileArchive className="h-3 w-3 text-blue-500" />
+                    <p className="text-xs text-blue-600">
+                      Queued for compression (runs in background)
+                    </p>
+                  </div>
+                )}
+
                 {upload.state === 'complete' && (
                   <div className="flex items-center gap-2 mt-2">
                     <CheckCircle2 className="h-3 w-3 text-green-500" />
-                    <p className="text-xs text-green-600">Upload complete</p>
+                    <p className="text-xs text-green-600">
+                      {upload.needsCompression === false ? 'Upload complete' : 'Ready to view'}
+                    </p>
                   </div>
                 )}
 

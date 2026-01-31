@@ -1,0 +1,27 @@
+{
+  "name": "mirror-labs-compression-worker",
+  "version": "1.0.0",
+  "description": "Compression worker for Mirror Labs - converts PLY files to SOG format",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playcanvas/splat-transform": "^1.0.0",
+    "@supabase/supabase-js": "^2.91.1",
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

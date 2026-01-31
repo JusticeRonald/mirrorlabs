@@ -165,6 +165,14 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
         return SplatFileType.SPLAT;
       case 'ksplat':
         return SplatFileType.KSPLAT;
+      case 'sog':
+        // SOG format: bundled WebP images in a ZIP container
+        // CRITICAL: SOG uses PCSOGSZIP, NOT SPZ - they are fundamentally different formats
+        // SPZ uses gzip with binary header (magic 0x504C5053), SOG uses lossless WebP in ZIP
+        return SplatFileType.PCSOGSZIP;
+      case 'pcsogs':
+        // Unbundled SOG format (meta.json + separate files)
+        return SplatFileType.PCSOGS;
       default:
         // Let Spark auto-detect
         return undefined;

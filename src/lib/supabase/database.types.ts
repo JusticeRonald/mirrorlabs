@@ -203,6 +203,10 @@ export interface Database {
           status: ScanStatus;
           error_message: string | null;
           orientation_json: Json | null;
+          compression_progress: number | null;
+          original_file_size: number | null;
+          compressed_file_size: number | null;
+          compression_ratio: number | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -220,6 +224,10 @@ export interface Database {
           status?: ScanStatus;
           error_message?: string | null;
           orientation_json?: Json | null;
+          compression_progress?: number | null;
+          original_file_size?: number | null;
+          compressed_file_size?: number | null;
+          compression_ratio?: number | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -237,6 +245,10 @@ export interface Database {
           status?: ScanStatus;
           error_message?: string | null;
           orientation_json?: Json | null;
+          compression_progress?: number | null;
+          original_file_size?: number | null;
+          compressed_file_size?: number | null;
+          compression_ratio?: number | null;
           created_by?: string;
           created_at?: string;
           updated_at?: string;

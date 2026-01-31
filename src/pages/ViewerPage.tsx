@@ -45,7 +45,9 @@ import {
   RIGHT_CLICK_MOVE_THRESHOLD,
 } from '@/lib/viewer/constants';
 import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
+import { useScanStatusSubscription, type ScanStatusInfo } from '@/hooks/useScanStatusSubscription';
 import type { Annotation as DbAnnotation, AnnotationReply as DbAnnotationReply } from '@/lib/supabase/database.types';
+import { CompressionProgress } from '@/components/upload/CompressionProgress';
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { UserRole } from '@/types/user';
 import type { SplatLoadProgress, SplatLoadError, SplatTransform, TransformMode } from '@/types/viewer';
@@ -166,6 +168,9 @@ const ViewerContent = () => {
   const [scan, setScan] = useState<ViewerScan | null>(null);
   const [projectScans, setProjectScans] = useState<ViewerScanInfo[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
+
+  // Compression status tracking
+  const [scanStatusInfo, setScanStatusInfo] = useState<ScanStatusInfo | null>(null);
 
   // Transform state
   const [transformMode, setTransformMode] = useState<TransformMode | null>(null);
@@ -552,6 +557,42 @@ const ViewerContent = () => {
         // Reply deletion not currently supported in local state
         // Would need to add removeAnnotationReply to ViewerContext
       },
+    },
+  });
+
+  // Real-time scan status subscription (for compression progress)
+  useScanStatusSubscription({
+    scanId: scanId || null,
+    enabled: !!scanId && isSupabaseConfigured(),
+    onStatusChange: (info) => {
+      setScanStatusInfo(info);
+    },
+    onReady: (updatedScan) => {
+      // Compression complete - update scan with new file URL
+      setScan((prev) =>
+        prev
+          ? {
+              ...prev,
+              modelUrl: updatedScan.file_url,
+            }
+          : null
+      );
+      // Clear status info since we're now ready
+      setScanStatusInfo({
+        status: 'ready',
+        compressionProgress: 100,
+        errorMessage: null,
+        compressedFileUrl: updatedScan.file_url,
+        compressionRatio: updatedScan.compression_ratio,
+      });
+    },
+    onError: (errorMessage) => {
+      // Compression failed - show error
+      setScanStatusInfo((prev) =>
+        prev
+          ? { ...prev, status: 'error', errorMessage }
+          : { status: 'error', compressionProgress: null, errorMessage, compressedFileUrl: null, compressionRatio: null }
+      );
     },
   });
 
@@ -1900,6 +1941,16 @@ const ViewerContent = () => {
         progress={loadProgress}
         error={loadError}
       />
+
+      {/* Compression Progress Overlay - shown when scan is being compressed */}
+      {scanStatusInfo && scanStatusInfo.status === 'processing' && (
+        <div className="absolute bottom-6 left-6 z-30 w-80">
+          <CompressionProgress
+            statusInfo={scanStatusInfo}
+            fileName={scan?.name}
+          />
+        </div>
+      )}
 
       {/* 3D Axis Navigator - top-right corner */}
       <div className="absolute top-20 right-6 z-20">
