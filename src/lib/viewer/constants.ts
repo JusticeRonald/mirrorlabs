@@ -166,3 +166,60 @@ export type ValidMeasurementUnit = typeof VALID_MEASUREMENT_UNITS[number];
 export function isValidMeasurementUnit(unit: string): unit is ValidMeasurementUnit {
   return VALID_MEASUREMENT_UNITS.includes(unit as ValidMeasurementUnit);
 }
+
+// ─── Performance ─────────────────────────────────────────────────────────────
+
+/** Splat count threshold for performance warning (1 million splats) */
+export const LARGE_SPLAT_COUNT_THRESHOLD = 1_000_000;
+
+// ─── Cursor Picking Performance ─────────────────────────────────────────────
+
+/**
+ * Throttle interval for WASM raycasting during cursor tracking.
+ * With predictive interpolation, we can raycast less frequently.
+ *
+ * Value: 4 = raycast every 4th frame = ~15Hz at 60fps
+ * - Between raycasts, cursor position is predicted via surface plane interpolation
+ * - This reduces CPU load from ~2ms/frame to ~0.5ms average
+ * - User perceives smooth 60fps cursor movement
+ */
+export const PICK_THROTTLE_FRAMES = 4;
+
+/**
+ * Maximum time (ms) between real raycasts during cursor tracking.
+ * Even if frame throttle hasn't elapsed, force a raycast after this time.
+ * Ensures pick cache stays fresh during low-FPS scenarios.
+ */
+export const PICK_MAX_STALE_MS = 150;
+
+/**
+ * Maximum pointer movement (NDC units) before forcing a fresh raycast.
+ * If cursor moves more than this since last raycast, interpolation may be inaccurate.
+ * ~0.05 NDC ≈ ~25px at 1080p resolution
+ */
+export const PICK_INTERPOLATION_THRESHOLD = 0.05;
+
+// ─── GPU Depth Picking ──────────────────────────────────────────────────────
+
+/**
+ * Whether to use GPU depth buffer picking (10-40x faster than WASM raycast).
+ * When enabled, cursor tracking reads depth from GPU instead of raycasting.
+ * Falls back to WASM raycast when depth read returns background.
+ */
+export const USE_GPU_DEPTH_PICKING = true;
+
+/**
+ * Depth value threshold for detecting background hits.
+ * WebGL normalized depth: 0.0 = near, 1.0 = far.
+ * Values >= this are considered "hit background / nothing".
+ */
+export const GPU_DEPTH_BACKGROUND_THRESHOLD = 0.9999;
+
+// ─── Spatial Index ───────────────────────────────────────────────────────────
+
+/**
+ * Minimum opacity threshold for including splats in spatial index.
+ * Splats below this opacity are excluded to reduce noise and improve performance.
+ * Also used by SplatVisualizationOverlay for point cloud rendering.
+ */
+export const MIN_SPLAT_OPACITY_THRESHOLD = 0.15;

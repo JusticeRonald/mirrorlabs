@@ -2,6 +2,20 @@ import * as THREE from 'three';
 import type { SplatOrientation, SplatTransform, SplatViewMode } from '@/types/viewer';
 
 /**
+ * Extracted splat data for spatial indexing
+ */
+export interface SplatDataArrays {
+  /** Splat centers: x, y, z, x, y, z, ... (local mesh space) */
+  centers: Float32Array;
+  /** Splat scales: sx, sy, sz, sx, sy, sz, ... */
+  scales: Float32Array;
+  /** Splat opacities: o1, o2, o3, ... (one per splat) */
+  opacities: Float32Array;
+  /** Total number of splats */
+  count: number;
+}
+
+/**
  * Metadata about a loaded splat scene
  */
 export interface SplatMetadata {
@@ -119,6 +133,13 @@ export interface GaussianSplatRenderer {
    * Call every frame to keep overlays aligned during gizmo transforms.
    */
   updateOverlay?(): void;
+
+  /**
+   * Extract splat data arrays for spatial indexing.
+   * Returns centers, scales, and opacities in flat Float32Arrays.
+   * Call once after loading to build the spatial index.
+   */
+  extractSplatData?(): SplatDataArrays | null;
 }
 
 /**

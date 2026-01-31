@@ -1572,6 +1572,13 @@ export class MeasurementRenderer {
   }
 
   /**
+   * Check if any measurements exist (for two-pass render optimization)
+   */
+  hasMeasurements(): boolean {
+    return this.measurements.size > 0;
+  }
+
+  /**
    * Update a measurement's point position and recalculate value
    * Used when dragging a measurement point with the gizmo
    * Note: newPosition is expected to be in world space

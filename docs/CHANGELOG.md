@@ -4,6 +4,45 @@ Historical record of code reviews, fixes, and feature development.
 
 ---
 
+## January 31, 2026 - Splat Picking Code Review Fixes
+
+Comprehensive code review fixes for the splat picking system optimizations.
+
+### Critical Fixes
+| Issue | File | Fix |
+|-------|------|-----|
+| Ray direction transformation bug | `SplatPickingSystem.ts` | Use `transformDirection()` for correct non-uniform scaling |
+| Global prototype pollution | `SplatBVHIndex.ts` | Apply `acceleratedRaycast` only to BVH mesh instance |
+| Static material memory leak | `SplatBVHIndex.ts` | Instance-based material with proper disposal |
+| Hot path memory allocations | All 3 files | Pooled Vector3 objects avoid GC pressure |
+
+### High Priority Fixes
+| Issue | File | Fix |
+|-------|------|-----|
+| Matrix hash collision risk | `SplatPickingSystem.ts` | Epsilon-based element comparison |
+| Ray-sphere not optimized | `SplatSpatialIndex.ts` | Simplified formula for normalized rays |
+| Missing bounds early exit | `SplatSpatialIndex.ts` | Early return if ray misses bounds |
+| Redundant updateMatrixWorld | `SplatPickingSystem.ts` | Removed (scene graph updated in render loop) |
+| Cache reset on mesh change | `SplatPickingSystem.ts` | Reset `cachedMatrixElements` in `buildSpatialIndex()` |
+
+### Medium Priority Fixes
+| Issue | Fix |
+|-------|-----|
+| Duplicate cache update logic | Refactored `processPendingDepthRead()` to use `updateCache()` |
+| Magic numbers | Added named constants (`BILLBOARD_SCALE`, `MULTI_SAMPLE_OFFSET`, etc.) |
+
+### Files Modified
+- `src/lib/viewer/SplatPickingSystem.ts`
+- `src/lib/viewer/SplatBVHIndex.ts`
+- `src/lib/viewer/SplatSpatialIndex.ts`
+
+### Verification
+- TypeScript compilation passed
+- ESLint passed (no new issues)
+- Production build passed
+
+---
+
 ## January 31, 2026 - SOG Compression Pipeline
 
 Implemented background compression pipeline for PLY → SOG format conversion (15-20x compression).

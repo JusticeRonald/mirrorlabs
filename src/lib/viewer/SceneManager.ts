@@ -9,6 +9,7 @@ import type { SplatOrientation, SplatTransform, SplatViewMode, MeasurementUnit }
 import { AnnotationRenderer, type AnnotationData, type AnnotationStatus } from './AnnotationRenderer';
 import { MeasurementRenderer, type MeasurementData } from './MeasurementRenderer';
 import { SplatPickingSystem, type PickResult } from './SplatPickingSystem';
+import { MIN_SPLAT_OPACITY_THRESHOLD } from './constants';
 
 /**
  * SceneManager - Orchestrates Three.js scene operations
@@ -139,9 +140,39 @@ export class SceneManager {
       // Parent annotations and measurements to the splat mesh
       // so they transform with the splat when rotated/scaled/moved
       this.setRenderersParentObject(mesh);
+
+      // Build spatial index for fast picking (deferred to avoid blocking UI)
+      this.buildSpatialIndex();
     }
 
     return metadata;
+  }
+
+  /**
+   * Build the spatial index for fast splat picking.
+   * Called automatically after loadSplat, but can be called manually if needed.
+   */
+  buildSpatialIndex(): void {
+    if (!this.splatRenderer || !this.pickingSystem) return;
+
+    const mesh = this.splatRenderer.getMesh();
+    if (!mesh) return;
+
+    // Extract splat data if renderer supports it
+    const splatData = this.splatRenderer.extractSplatData?.();
+    if (!splatData) {
+      console.warn('[SceneManager] Renderer does not support splat data extraction');
+      return;
+    }
+
+    // Build spatial index in the picking system
+    this.pickingSystem.buildSpatialIndex(
+      splatData.centers,
+      mesh,
+      splatData.scales,
+      MIN_SPLAT_OPACITY_THRESHOLD,
+      splatData.opacities
+    );
   }
 
   /**
@@ -606,6 +637,13 @@ export class SceneManager {
   }
 
   /**
+   * Check if any measurements exist (for two-pass render optimization)
+   */
+  hasMeasurements(): boolean {
+    return this.measurementRenderer?.hasMeasurements() ?? false;
+  }
+
+  /**
    * Hide/show segments connected to a dragged point for magnifier two-pass rendering.
    * When dragging a measurement point, adjacent segments should be hidden from magnifier.
    */
@@ -739,6 +777,22 @@ export class SceneManager {
 
     const splatMesh = this.splatRenderer?.getMesh() ?? null;
     return this.pickingSystem.pick(camera, pointer, splatMesh);
+  }
+
+  /**
+   * Fast single-ray pick for cursor preview (5x faster than full pickSplatPosition).
+   * Use this for continuous cursor tracking during measurement placement.
+   * Use pickSplatPosition() for final click placement accuracy.
+   *
+   * @param camera - The camera being used for rendering
+   * @param pointer - Normalized device coordinates (-1 to 1)
+   * @returns PickResult if a point was found, null otherwise
+   */
+  pickSplatPositionFast(camera: THREE.Camera, pointer: THREE.Vector2): PickResult | null {
+    if (!this.pickingSystem) return null;
+
+    const splatMesh = this.splatRenderer?.getMesh() ?? null;
+    return this.pickingSystem.pickFast(camera, pointer, splatMesh);
   }
 
   /**

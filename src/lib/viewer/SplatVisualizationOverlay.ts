@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SplatMesh } from '@sparkjsdev/spark';
+import { MIN_SPLAT_OPACITY_THRESHOLD } from './constants';
 
 /**
  * Maximum number of splats to render as center points.
@@ -12,12 +13,6 @@ const CENTER_COLOR = 0x0000ff;
 
 /** Opacity for center points, matching SuperSplat's rgba(0,0,1,0.5). */
 const CENTER_OPACITY = 0.5;
-
-/**
- * Minimum opacity threshold for including a splat in overlays.
- * Splats below this are skipped entirely to reduce visual noise.
- */
-const MIN_OPACITY_THRESHOLD = 0.15;
 
 /**
  * SplatVisualizationOverlay renders a point cloud visualization for Gaussian Splats:
@@ -67,7 +62,7 @@ export class SplatVisualizationOverlay {
       if (pointIndex >= pointCount) return;
 
       // Skip low-opacity splats entirely to reduce visual noise
-      if (opacity < MIN_OPACITY_THRESHOLD) return;
+      if (opacity < MIN_SPLAT_OPACITY_THRESHOLD) return;
 
       const off = pointIndex * 3;
       positions[off] = center.x;

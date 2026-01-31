@@ -43,14 +43,16 @@ import {
   AREA_SNAP_THRESHOLD,
   RIGHT_CLICK_CONFIRM_MS,
   RIGHT_CLICK_MOVE_THRESHOLD,
+  LARGE_SPLAT_COUNT_THRESHOLD,
 } from '@/lib/viewer/constants';
+import { useToast } from '@/hooks/use-toast';
 import { useAnnotationSubscription } from '@/hooks/useAnnotationSubscription';
 import { useScanStatusSubscription, type ScanStatusInfo } from '@/hooks/useScanStatusSubscription';
 import type { Annotation as DbAnnotation, AnnotationReply as DbAnnotationReply } from '@/lib/supabase/database.types';
 import { CompressionProgress } from '@/components/upload/CompressionProgress';
 import { SceneManager } from '@/lib/viewer/SceneManager';
 import { UserRole } from '@/types/user';
-import type { SplatLoadProgress, SplatLoadError, SplatTransform, TransformMode } from '@/types/viewer';
+import type { SplatLoadProgress, SplatLoadError, SplatTransform, TransformMode, SplatSceneMetadata } from '@/types/viewer';
 import { DEFAULT_SPLAT_TRANSFORM } from '@/types/viewer';
 
 // Normalized types for viewer compatibility
@@ -154,6 +156,9 @@ const ViewerContent = () => {
     setActiveSavedView,
   } = useViewer();
 
+  // Toast notifications for user feedback
+  const { toast } = useToast();
+
   // Get current user ID (generate unique session ID for demo mode to isolate demo users)
   const [demoSessionId] = useState(() => `demo-${crypto.randomUUID().slice(0, 8)}`);
   const currentUserId = user?.id || demoSessionId;
@@ -207,7 +212,9 @@ const ViewerContent = () => {
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Measurement preview cursor position (for showing preview line during placement)
-  const [measurementCursorPosition, setMeasurementCursorPosition] = useState<THREE.Vector3 | null>(null);
+  // Use ref + trigger pattern to avoid React re-renders during cursor movement (60fps drag perf)
+  const measurementCursorPositionRef = useRef<THREE.Vector3 | null>(null);
+  const [cursorUpdateTrigger, setCursorUpdateTrigger] = useState(0);
 
   // Hovered measurement label (for dashing and delete UI)
   const [hoveredLabelId, setHoveredLabelId] = useState<string | null>(null);
@@ -218,12 +225,14 @@ const ViewerContent = () => {
   // Track if cursor is near first point of area measurement (for snap affordance)
   const isNearFirstPoint = useMemo(() => {
     const pending = state.pendingMeasurement;
-    if (pending?.type !== 'area' || pending.points.length < 3 || !measurementCursorPosition) {
+    const cursorPos = measurementCursorPositionRef.current;
+    if (pending?.type !== 'area' || pending.points.length < 3 || !cursorPos) {
       return false;
     }
     const firstPoint = pending.points[0];
-    return measurementCursorPosition.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD;
-  }, [state.pendingMeasurement, measurementCursorPosition]);
+    return cursorPos.distanceTo(firstPoint) < AREA_SNAP_THRESHOLD;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.pendingMeasurement, cursorUpdateTrigger]);
 
   // Cache for measurement labels during drag (avoids recalculation while dragging)
   const prevLabelsRef = useRef<MeasurementLabelData[]>([]);
@@ -234,6 +243,19 @@ const ViewerContent = () => {
    */
   const normalizeVector3 = useCallback((pos: THREE.Vector3 | { x: number; y: number; z: number }): THREE.Vector3 =>
     pos instanceof THREE.Vector3 ? pos : new THREE.Vector3(pos.x, pos.y, pos.z), []);
+
+  /**
+   * Callback for cursor position updates during measurement placement.
+   * Uses ref + trigger pattern to avoid React re-renders during cursor movement (60fps drag perf).
+   * Only triggers re-render when labels actually need to update (pending or dragging state).
+   */
+  const handleMeasurementCursorUpdate = useCallback((pos: THREE.Vector3 | null) => {
+    measurementCursorPositionRef.current = pos;
+    // Only trigger re-render if we need labels to update (pending or dragging)
+    if (state.pendingMeasurement || state.draggingMeasurementPoint) {
+      setCursorUpdateTrigger(prev => prev + 1);
+    }
+  }, [state.pendingMeasurement, state.draggingMeasurementPoint]);
 
   /**
    * Get segment indices adjacent to a point in a measurement.
@@ -358,8 +380,10 @@ const ViewerContent = () => {
   // Build measurement label data for overlay
   // During drag, generate preview labels for affected segments while keeping others cached
   const measurementLabels = useMemo<MeasurementLabelData[]>(() => {
+    const cursorPos = measurementCursorPositionRef.current;
+
     // Handle drag preview: generate preview labels for affected segments
-    if (state.draggingMeasurementPoint && measurementCursorPosition) {
+    if (state.draggingMeasurementPoint && cursorPos) {
       const { measurementId, pointIndex } = state.draggingMeasurementPoint;
       const measurement = state.measurements.find(m => m.id === measurementId);
       if (!measurement) return prevLabelsRef.current;
@@ -380,7 +404,7 @@ const ViewerContent = () => {
       const previewLabels = generateDragPreviewLabels(
         measurement,
         pointIndex,
-        measurementCursorPosition
+        cursorPos
       );
 
       return [...unaffectedLabels, ...previewLabels];
@@ -447,7 +471,7 @@ const ViewerContent = () => {
     }
 
     // Preview labels (during measurement placement)
-    if (state.pendingMeasurement && measurementCursorPosition && !isOrbiting) {
+    if (state.pendingMeasurement && cursorPos && !isOrbiting) {
       const points = state.pendingMeasurement.points;
       const unit = state.measurementUnit || 'ft';
 
@@ -470,9 +494,8 @@ const ViewerContent = () => {
 
         // Preview label for current segment (last placed point to cursor)
         const lastPoint = points[points.length - 1];
-        const cursorPoint = measurementCursorPosition;
-        const midpoint = MeasurementCalculator.calculateMidpoint(lastPoint, cursorPoint);
-        const distance = lastPoint.distanceTo(cursorPoint);
+        const midpoint = MeasurementCalculator.calculateMidpoint(lastPoint, cursorPos);
+        const distance = lastPoint.distanceTo(cursorPos);
 
         labels.push({
           id: 'preview-cursor-label',
@@ -487,7 +510,8 @@ const ViewerContent = () => {
     // Cache labels for drag optimization
     prevLabelsRef.current = labels;
     return labels;
-  }, [state.measurements, state.pendingMeasurement, state.draggingMeasurementPoint, measurementCursorPosition, isOrbiting, sceneManagerReady, transformVersion, permissions.canMeasure, getAffectedSegmentIndices, generateDragPreviewLabels]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.measurements, state.pendingMeasurement, state.draggingMeasurementPoint, cursorUpdateTrigger, isOrbiting, sceneManagerReady, transformVersion, permissions.canMeasure, getAffectedSegmentIndices, generateDragPreviewLabels]);
 
   /**
    * Persist a measurement to Supabase if configured.
@@ -830,7 +854,7 @@ const ViewerContent = () => {
           setTimeout(async () => {
             const measurement = finalizeMeasurement(currentUserId);
             sceneManagerRef.current?.clearMeasurementPreview();
-            setMeasurementCursorPosition(null);
+            measurementCursorPositionRef.current = null;
             await persistMeasurement(measurement);
           }, 0);
           return;
@@ -859,7 +883,7 @@ const ViewerContent = () => {
           setTimeout(async () => {
             const measurement = finalizeMeasurement(currentUserId);
             sceneManagerRef.current?.clearMeasurementPreview();
-            setMeasurementCursorPosition(null);
+            measurementCursorPositionRef.current = null;
             await persistMeasurement(measurement);
           }, 0);
           return;
@@ -1007,20 +1031,22 @@ const ViewerContent = () => {
     if (isOrbiting) return;
 
     const pending = state.pendingMeasurement;
+    const cursorPos = measurementCursorPositionRef.current;
 
-    if (pending && pending.points.length >= 1 && measurementCursorPosition) {
+    if (pending && pending.points.length >= 1 && cursorPos) {
       if (pending.type === 'distance') {
         // Distance: show preview polyline from all placed points to cursor
-        sceneManagerRef.current.showDistancePreview(pending.points, measurementCursorPosition);
+        sceneManagerRef.current.showDistancePreview(pending.points, cursorPos);
       } else if (pending.type === 'area') {
         // Area: show preview polygon with cursor as potential next point
-        sceneManagerRef.current.showAreaPreview(pending.points, measurementCursorPosition);
+        sceneManagerRef.current.showAreaPreview(pending.points, cursorPos);
       }
     } else {
       // Clear preview when no pending measurement or cursor not on surface
       sceneManagerRef.current.clearMeasurementPreview();
     }
-  }, [state.pendingMeasurement, measurementCursorPosition, isOrbiting]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.pendingMeasurement, cursorUpdateTrigger, isOrbiting]);
 
   // Hover effect for measurement labels (dashing lines when hovered)
   useEffect(() => {
@@ -1349,12 +1375,12 @@ const ViewerContent = () => {
           if (state.pendingMeasurement?.type === 'distance' && state.pendingMeasurement.points.length >= 2) {
             const measurement = finalizeMeasurement(currentUserId);
             sceneManagerRef.current?.clearMeasurementPreview();
-            setMeasurementCursorPosition(null);
+            measurementCursorPositionRef.current = null;
             persistMeasurement(measurement);
           } else if (state.pendingMeasurement?.type === 'area' && state.pendingMeasurement.points.length >= 3) {
             const measurement = finalizeMeasurement(currentUserId);
             sceneManagerRef.current?.clearMeasurementPreview();
-            setMeasurementCursorPosition(null);
+            measurementCursorPositionRef.current = null;
             persistMeasurement(measurement);
           }
           break;
@@ -1380,7 +1406,7 @@ const ViewerContent = () => {
           if (state.pendingMeasurement) {
             cancelMeasurement();
             sceneManagerRef.current?.clearMeasurementPreview();
-            setMeasurementCursorPosition(null);
+            measurementCursorPositionRef.current = null;
           } else if (state.selectedAnnotationId) {
             selectAnnotation(null);
             closeCollaborationPanel();
@@ -1452,7 +1478,7 @@ const ViewerContent = () => {
       if (duration < RIGHT_CLICK_CONFIRM_MS && distance < RIGHT_CLICK_MOVE_THRESHOLD) {
         const measurement = finalizeMeasurement(currentUserId);
         sceneManagerRef.current?.clearMeasurementPreview();
-        setMeasurementCursorPosition(null);
+        measurementCursorPositionRef.current = null;
         await persistMeasurement(measurement);
       }
       // If user moved or held too long, they were panning - do nothing
@@ -1817,7 +1843,17 @@ const ViewerContent = () => {
             setLoadError(null);
           }}
           onSplatLoadProgress={(progress) => setLoadProgress(progress)}
-          onSplatLoadComplete={() => setIsLoading(false)}
+          onSplatLoadComplete={(metadata: SplatSceneMetadata) => {
+            setIsLoading(false);
+            // Show performance warning for large splat files
+            if (metadata.splatCount > LARGE_SPLAT_COUNT_THRESHOLD) {
+              toast({
+                title: 'Large Scan',
+                description: `This scan has ${(metadata.splatCount / 1_000_000).toFixed(1)}M splats. Performance may be reduced on some devices.`,
+                duration: 5000,
+              });
+            }
+          }}
           onSplatLoadError={(err) => {
             setIsLoading(false);
             setLoadError({ message: err.message });
@@ -1830,7 +1866,7 @@ const ViewerContent = () => {
           magnifierCanvas={magnifierCanvasRef.current}
           onMousePositionUpdate={(x, y, visible) => setMagnifierPos({ x, y, visible })}
           splatViewMode={state.splatViewMode}
-          onMeasurementCursorUpdate={setMeasurementCursorPosition}
+          onMeasurementCursorUpdate={handleMeasurementCursorUpdate}
           pendingMeasurementPointCount={state.pendingMeasurement?.points.length ?? 0}
           onOrbitStart={() => setIsOrbiting(true)}
           onOrbitEnd={() => setIsOrbiting(false)}

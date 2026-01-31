@@ -8,7 +8,8 @@ import type {
   GaussianSplatRenderer,
   SplatMetadata,
   SplatLoadProgress,
-  SplatLoadOptions
+  SplatLoadOptions,
+  SplatDataArrays,
 } from './GaussianSplatRenderer';
 import { DEFAULT_SPLAT_ORIENTATION, DEFAULT_SPLAT_TRANSFORM, type SplatOrientation, type SplatTransform, type SplatViewMode } from '@/types/viewer';
 import { SplatVisualizationOverlay } from '@/lib/viewer/SplatVisualizationOverlay';
@@ -293,6 +294,47 @@ export class SparkSplatRenderer implements GaussianSplatRenderer {
    */
   updateOverlay(): void {
     this.overlay?.syncTransform();
+  }
+
+  /**
+   * Extract splat data arrays for spatial indexing.
+   * Returns centers, scales, and opacities in flat Float32Arrays.
+   *
+   * Note: This iterates over all splats once, so call sparingly (once on load).
+   * Memory usage: ~28 bytes per splat (3×4 centers + 3×4 scales + 1×4 opacity)
+   *
+   * @returns SplatDataArrays or null if splat mesh not loaded
+   */
+  extractSplatData(): SplatDataArrays | null {
+    if (!this.splatMesh?.isInitialized) return null;
+
+    const packedSplats = this.splatMesh.packedSplats;
+    if (!packedSplats) return null;
+
+    const count = packedSplats.numSplats;
+    if (count === 0) return null;
+
+    // Pre-allocate arrays
+    const centers = new Float32Array(count * 3);
+    const scales = new Float32Array(count * 3);
+    const opacities = new Float32Array(count);
+
+    // Extract data using forEachSplat
+    this.splatMesh.forEachSplat((index, center, splatScales, _quat, opacity) => {
+      const off3 = index * 3;
+
+      centers[off3] = center.x;
+      centers[off3 + 1] = center.y;
+      centers[off3 + 2] = center.z;
+
+      scales[off3] = splatScales.x;
+      scales[off3 + 1] = splatScales.y;
+      scales[off3 + 2] = splatScales.z;
+
+      opacities[index] = opacity;
+    });
+
+    return { centers, scales, opacities, count };
   }
 
   dispose(): void {

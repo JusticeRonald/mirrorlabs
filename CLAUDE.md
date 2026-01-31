@@ -40,6 +40,8 @@ src/
 │   ├── compression/           # Client-side compression utilities
 │   └── viewer/
 │       ├── SceneManager.ts     # Three.js scene orchestration
+│       ├── SplatPickingSystem.ts   # Hybrid picking (spatial index + WASM)
+│       ├── SplatSpatialIndex.ts    # Spatial hash grid for fast splat picking
 │       ├── MeasurementRenderer.ts  # 3D measurement lines
 │       ├── AnnotationRenderer.ts   # 3D annotation markers
 │       ├── constants.ts        # Viewer constants and thresholds
@@ -221,6 +223,43 @@ Core features implemented:
 
 ### Branch Status
 Development on `gaussian-splat-viewer` branch, regularly merged to `master`.
+
+## Splat Picking System
+
+Gaussian splats are not traditional geometry - they're probabilistic density functions. Native raycasting doesn't exist in any web implementation. Our hybrid picking system:
+
+```
+Interpolation Cache (0.01ms) → Instant feedback between picks
+         ↓
+BVH Index (0.01-0.02ms) → Fast BVH-accelerated ray queries (default)
+         ↓
+GPU Depth Buffer (0.1ms) → Surface position refinement
+         ↓
+WASM Raycast (0.5-2ms) → Fallback for final click placement
+```
+
+**Architecture:**
+- BVH (three-mesh-bvh) built once on splat load from splat centers (default)
+- Spatial hash grid available as fallback for faster build times
+- 100-200x faster than O(n) WASM raycast for cursor tracking
+
+**Performance Optimizations (January 2026):**
+- Integer hash keys instead of string keys (5400 fewer allocations per pick)
+- Generation counter instead of Set for visited tracking
+- Cached inverse matrix (only recomputed when mesh moves)
+- Object pooling for Vector3 results
+- Epsilon-based matrix comparison (replaces hash, avoids collision risk)
+- Bounds check early exit in spatial index
+- Optimized ray-sphere intersection (assumes normalized rays)
+- Proper direction transformation with `transformDirection()`
+
+**Key insight from industry research:** Every major platform (Potree, SuperSplat) uses spatial indices for picking on large datasets. See `docs/ARCHITECTURE.md` for full details.
+
+**Key files:**
+- `src/lib/viewer/SplatPickingSystem.ts` - Hybrid picking implementation
+- `src/lib/viewer/SplatBVHIndex.ts` - BVH-accelerated index (default)
+- `src/lib/viewer/SplatSpatialIndex.ts` - Spatial hash grid (fallback)
+- `src/lib/viewer/constants.ts` - Picking thresholds and config
 
 ## Related Documentation
 

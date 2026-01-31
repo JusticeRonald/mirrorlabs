@@ -37,6 +37,20 @@ export class MagnifierUpdater {
     return this._loupeSize;
   }
 
+  /** Current mouse X position in CSS pixels relative to container */
+  get mouseX(): number {
+    return this._mouseX;
+  }
+
+  /** Current mouse Y position in CSS pixels relative to container */
+  get mouseY(): number {
+    return this._mouseY;
+  }
+
+  get zoomFactor(): number {
+    return this._zoomFactor;
+  }
+
   /** Called in animate() right after renderer.render() */
   update(sourceCanvas: HTMLCanvasElement): void {
     if (!this._enabled || !this.loupeCanvas || !this.loupeCtx) return;
@@ -60,10 +74,16 @@ export class MagnifierUpdater {
 
     // Destination (loupe at device pixel resolution for sharpness)
     const destSize = this._loupeSize * dpr;
-    this.loupeCanvas.width = destSize;
-    this.loupeCanvas.height = destSize;
 
-    this.loupeCtx.clearRect(0, 0, destSize, destSize);
+    // Only resize canvas when size actually changes (avoids GPU memory realloc every frame)
+    if (this.loupeCanvas.width !== destSize || this.loupeCanvas.height !== destSize) {
+      this.loupeCanvas.width = destSize;
+      this.loupeCanvas.height = destSize;
+    } else {
+      // Canvas wasn't resized, so we need to clear it manually
+      this.loupeCtx.clearRect(0, 0, destSize, destSize);
+    }
+
     this.loupeCtx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, destSize, destSize);
   }
 }
